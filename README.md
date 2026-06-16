@@ -11,6 +11,13 @@ Clambake gives that state a home you can see in your browser.
   spot tickets that fell behind.
 - Drops into **any** project — it's a standalone tool with no coupling to what it tracks.
 
+![Clambake board](docs/board.png)
+
+Click any card to open its detail — status, sprint, epic, acceptance criteria, markdown
+test steps, screenshots, and notes:
+
+<p align="center"><img src="docs/ticket.png" alt="Ticket detail" width="460"></p>
+
 ## Run
 
 ```bash
