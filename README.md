@@ -7,7 +7,7 @@ Clambake gives that state a home you can see in your browser.
 
 - **The agent** opens tickets (with acceptance criteria), moves them across the board, adds notes,
   links PRs — via a small CLI or by editing files.
-- **You** watch it live in the browser: drag cards between columns, add notes, check off AC,
+- **You** watch it live in the browser: drag cards between columns, add notes, check off AC, add tickets,
   spot tickets that fell behind.
 - Drops into **any** project — it's a standalone tool with no coupling to what it tracks.
 
