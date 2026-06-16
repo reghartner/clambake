@@ -1,0 +1,31 @@
+{
+  "name": "Demo Project",
+  "idPrefix": "DEMO",
+  "staleDays": 5,
+  "columns": [
+    {
+      "id": "backlog",
+      "name": "Backlog"
+    },
+    {
+      "id": "planned",
+      "name": "Planned"
+    },
+    {
+      "id": "active",
+      "name": "Active"
+    },
+    {
+      "id": "blocked",
+      "name": "Blocked"
+    },
+    {
+      "id": "testingNeeded",
+      "name": "Testing Needed"
+    },
+    {
+      "id": "done",
+      "name": "Done"
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Clambake</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">🦪 Clambake</div>
+      <select id="projectSelect" class="select" title="Project"></select>
+      <select id="sprintFilter" class="select" title="Filter by sprint">
+        <option value="">All sprints</option>
+      </select>
+      <select id="epicFilter" class="select" title="Filter by epic">
+        <option value="">All epics</option>
+      </select>
+      <label class="toggle">
+        <input type="checkbox" id="behindOnly" />
+        <span>⚠ behind only</span>
+      </label>
+      <input id="search" class="search" type="search" placeholder="search…" />
+      <span class="spacer"></span>
+      <span id="status" class="status"></span>
+      <button id="newTicketBtn" class="btn primary">+ Ticket</button>
+      <button id="sprintsBtn" class="btn">Sprints</button>
+      <button id="newProjectBtn" class="btn">+ Project</button>
+    </header>
+
+    <main id="board" class="board"></main>
+
+    <!-- Ticket detail / edit modal -->
+    <div id="modal" class="modal hidden">
+      <div class="modal-card">
+        <button class="modal-close" id="modalClose">✕</button>
+        <div id="modalBody"></div>
+      </div>
+    </div>
+
+    <!-- Sprint manager modal -->
+    <div id="sprintModal" class="modal hidden">
+      <div class="modal-card">
+        <button class="modal-close" id="sprintModalClose">✕</button>
+        <div id="sprintModalBody"></div>
+      </div>
+    </div>
+
+    <!-- Transient feedback toasts -->
+    <div id="toasts" class="toasts"></div>
+
+    <script src="vendor/marked.umd.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

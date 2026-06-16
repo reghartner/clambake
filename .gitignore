@@ -1,0 +1,17 @@
+node_modules/
+*.log
+.DS_Store
+
+# atomic-write temp files (write to <file>.tmp-<pid>-<n> then rename)
+*.tmp-*
+
+# live board data — keep the repo generic; ship only the demo project
+/data/projects/*
+!/data/projects/.gitkeep
+!/data/projects/demo/
+
+# personal / project-specific watcher scripts (the generic watch.js is tracked)
+/board_watch_*.js
+
+# uploaded attachment binaries (incl. the demo's) — don't track screenshots
+data/projects/*/attachments/

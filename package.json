@@ -1,0 +1,17 @@
+{
+  "name": "clambake",
+  "version": "0.1.0",
+  "description": "Lite-JIRA kanban board for tracking an AI agent's active/planned/done/testing work across any project",
+  "type": "module",
+  "bin": {
+    "clambake": "./cli.js"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "cli": "node cli.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "gray-matter": "^4.0.3"
+  }
+}
