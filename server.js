@@ -21,7 +21,9 @@ function h(fn) {
   return (req, res) => {
     try {
       const out = fn(req, res);
+      if (res.headersSent) return; // handler wrote the response itself
       if (out !== undefined) res.json(out);
+      else res.status(204).end(); // never leave the request hanging on an undefined return
     } catch (err) {
       const status = err instanceof HttpError ? err.status : 500;
       if (status === 500) console.error(err);
@@ -95,6 +97,12 @@ app.get("/api/projects/:p/tickets/:id/attachments/:file", (req, res) => {
   try {
     const file = store.attachmentFile(req.params.p, req.params.id, req.params.file);
     const type = IMAGE_TYPES[path.extname(file).toLowerCase()] || "application/octet-stream";
+    // Harden against stored XSS via uploaded SVG: an .svg served as image/svg+xml
+    // would run its embedded script if opened directly as a document. `sandbox`
+    // (no allow-scripts) blocks that and treats it as a null origin; `nosniff`
+    // stops MIME confusion. Images still render fine inline and in a new tab.
+    res.set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+    res.set("X-Content-Type-Options", "nosniff");
     res.type(type).sendFile(file);
   } catch (err) {
     const status = err instanceof HttpError ? err.status : 500;

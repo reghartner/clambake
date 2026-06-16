@@ -46,7 +46,10 @@ test("createTicket allocates unique sequential ids", () => {
   assert.equal(b.id, "T-2");
 });
 
-test("concurrent createTicket never reuses an id", async () => {
+// store.createTicket is synchronous, so these run sequentially in one process —
+// this verifies id allocation over many creates, not a true cross-process race
+// (that's the O_EXCL "wx" path, which a single Node process can't reproduce).
+test("createTicket never reuses an id across many creates", async () => {
   const slug = freshProject();
   const created = await Promise.all(
     Array.from({ length: 25 }, (_, i) => Promise.resolve().then(() => store.createTicket(slug, { title: `t${i}` })))
