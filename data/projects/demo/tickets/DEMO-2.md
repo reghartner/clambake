@@ -1,21 +1,26 @@
 ---
 id: DEMO-2
-title: Create your first real project
-status: backlog
-sprint: null
-epic: ''
-priority: med
-labels: []
-assignee: ''
+title: User signup form
+status: done
+sprint: sprint-1
+epic: auth
+priority: high
+labels:
+  - ui
+assignee: dev-b
 links: []
 attachments: []
 blockedBy: []
-ac: []
+ac:
+  - text: email+password validation
+    done: true
+  - text: stores hashed password
+    done: true
 dueDate: null
 testSteps: ''
 lastActor: ui
-createdAt: '2026-06-15T19:05:35.558Z'
-updatedAt: '2026-06-16T18:44:52.626Z'
+createdAt: '2026-06-16T18:47:06.182Z'
+updatedAt: '2026-06-16T18:47:25.854Z'
 ---
 
 

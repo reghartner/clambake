@@ -1,29 +1,31 @@
 ---
 id: DEMO-5
-title: Link a PR and add a note
+title: Password reset email
 status: testingNeeded
 sprint: sprint-1
-epic: integrations
-priority: med
+epic: auth
+priority: high
 labels: []
-assignee: ''
-links:
-  - 'https://example.com/pr/1'
+assignee: dev-a
+links: []
 attachments: []
 blockedBy: []
-ac: []
+ac:
+  - text: reset link emailed
+    done: true
+  - text: link expires after 1h
+    done: false
 dueDate: null
 testSteps: |-
-  ## Setup
-  1. Open the level
-
   ## Steps
-  1. Press **Play**
-  2. Watch the onset
+  1. Click **Forgot password**, enter your email
+  2. Open the email, follow the link
+  3. Set a new password
 
-  **Expected:** onset lands on beat
-createdAt: '2026-06-15T19:05:38.541Z'
-updatedAt: '2026-06-16T02:52:48.657Z'
+  **Expected:** old password rejected, new one works.
+lastActor: ui
+createdAt: '2026-06-16T18:47:07.405Z'
+updatedAt: '2026-06-16T18:47:28.039Z'
 ---
 
 

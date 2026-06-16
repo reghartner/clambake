@@ -1,23 +1,25 @@
 ---
 id: DEMO-3
-title: Drag a card between columns
-status: planned
+title: Login + session cookie
+status: done
 sprint: sprint-1
-epic: board-ux
-priority: med
+epic: auth
+priority: high
 labels: []
-assignee: ''
+assignee: dev-a
 links: []
 attachments: []
 blockedBy: []
 ac:
-  - text: tried a drag
-    done: false
-  - text: saw the toast
-    done: false
+  - text: sets secure cookie
+    done: true
+  - text: logout clears session
+    done: true
 dueDate: null
-createdAt: '2026-06-15T19:05:36.476Z'
-updatedAt: '2026-06-15T20:57:19.238Z'
+testSteps: ''
+lastActor: ui
+createdAt: '2026-06-16T18:47:06.577Z'
+updatedAt: '2026-06-16T18:47:26.727Z'
 ---
 
 

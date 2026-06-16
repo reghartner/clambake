@@ -1,20 +1,28 @@
 ---
 id: DEMO-6
-title: Overdue example (shows the behind flag)
-status: blocked
-sprint: sprint-1
-epic: ''
+title: Dashboard charts
+status: active
+sprint: sprint-2
+epic: dashboard
 priority: high
-labels: []
-assignee: ''
+labels:
+  - ui
+assignee: dev-b
 links: []
 attachments: []
 blockedBy: []
-ac: []
-dueDate: '2026-01-01'
+ac:
+  - text: weekly active users chart
+    done: true
+  - text: revenue chart
+    done: false
+  - text: empty-state handled
+    done: false
+dueDate: null
 testSteps: ''
-createdAt: '2026-06-15T19:05:39.491Z'
-updatedAt: '2026-06-16T02:52:48.058Z'
+lastActor: ui
+createdAt: '2026-06-16T18:47:07.807Z'
+updatedAt: '2026-06-16T18:47:28.468Z'
 ---
 
 
