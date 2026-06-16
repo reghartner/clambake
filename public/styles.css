@@ -539,6 +539,12 @@ textarea {
 .column[data-col="blocked"] {
   border-color: #5a2a2a;
 }
+.column[data-col="needsRework"] .col-head {
+  color: var(--pri-med);
+}
+.column[data-col="needsRework"] {
+  border-color: #5a4a23;
+}
 
 /* ---- toasts ---- */
 .toasts {

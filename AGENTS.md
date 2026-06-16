@@ -24,6 +24,7 @@ is `<repo>/data/projects` unless `CLAMBAKE_DATA` is set.
   - `active` → being worked right now
   - `blocked` → can't proceed (waiting on a dep/decision) — note WHY in the body
   - `testingNeeded` → work landed but needs a test / verification / human playtest before it's trusted
+  - `needsRework` → testing/review bounced it back — fix required; note WHAT failed in the body
   - `done` → AC met **and** verified. Only `done` clears the "behind" flag.
 - **Append a note** whenever you park, hit a blocker, or learn where something landed:
   `node cli.js note -p <project> <id> "Parked: blocked on X; details in PR #88"`.
@@ -38,7 +39,7 @@ node cli.js new -p demo --title "Results screen" --status planned \
   --sprint sprint-1 --epic results-screen --priority high --assignee coder \
   --ac "shows score" --ac "replay button" --label ui --link <pr-url>
 
-node cli.js move   -p demo DEMO-1 blocked        # columns: backlog planned active blocked testingNeeded done
+node cli.js move   -p demo DEMO-1 blocked        # columns: backlog planned active blocked testingNeeded needsRework done
 node cli.js note   -p demo DEMO-1 "PR #12 open, awaiting review"
 node cli.js update -p demo DEMO-1 --test-steps "## Steps
 1. Open X

@@ -24,6 +24,10 @@
       "name": "Testing Needed"
     },
     {
+      "id": "needsRework",
+      "name": "Needs Rework"
+    },
+    {
       "id": "done",
       "name": "Done"
     }
