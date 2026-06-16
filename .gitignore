@@ -10,8 +10,12 @@ node_modules/
 !/data/projects/.gitkeep
 !/data/projects/demo/
 
-# personal / project-specific watcher scripts (the generic watch.js is tracked)
+# personal / project-specific watcher scripts + their state (generic watch.js is tracked)
 /board_watch_*.js
+/.board_watch_*
 
 # uploaded attachment binaries (incl. the demo's) — don't track screenshots
 data/projects/*/attachments/
+
+# watcher state snapshots
+data/projects/*/.watch_state.json

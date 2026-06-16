@@ -59,6 +59,23 @@ Two processes write the same files — your browser (→ server) and the agent (
 - **Exclusive create** (`O_EXCL`) — two simultaneous "new ticket" calls can't grab the same id;
   the loser retries with the next number.
 
+## Watcher (optional, for agent harnesses)
+
+`watch.js` lets an agent/host harness block until the board meaningfully changes, then
+re-run. It exits when a ticket's **status** changes (a column move) or a ticket is
+added/removed — not on every minor edit.
+
+```bash
+node watch.js <project> [--ignore-actor <id>] [--heartbeat-ms <n>]
+```
+
+- `--ignore-actor <id>` — skip changes whose `lastActor` is `<id>`, so an agent isn't
+  woken by its own writes (pairs with the CLI `--actor` flag).
+- `--heartbeat-ms <n>` — exit after `n` ms with no change (default 30 min) so the watch
+  can't silently die.
+- **Gap-safe:** it persists a snapshot (`<project>/.watch_state.json`, gitignored) and
+  uses it as the baseline on start, so a move that lands between watches is still caught.
+
 ## Layout
 
 ```
