@@ -14,6 +14,7 @@
 //                      [--link url]... [--label x]... [--assignee a] [--due 2026-07-01]
 //   node cli.js ac     -p <proj> <id> add "criterion"     | check <index> | uncheck <index>
 //   node cli.js note   -p <proj> <id> "free text note"
+//   node cli.js attach -p <proj> <id> <image-path> [--name name] | rm <filename>
 //   node cli.js ls     -p <proj> [--status active] [--sprint s1] [--behind]
 //   node cli.js show   -p <proj> <id>
 //   node cli.js behind -p <proj>
@@ -24,6 +25,8 @@
 //   node cli.js sprint close -p <proj> <id>
 
 import { parseArgs } from "node:util";
+import { readFileSync } from "node:fs";
+import { basename } from "node:path";
 import { makeClient } from "./lib/api-client.js";
 
 // Set CLAMBAKE_URL=http://<host>:3000 to drive a remote board over the LAN;
@@ -184,6 +187,29 @@ try {
       break;
     }
 
+    case "attach": {
+      const { values, positionals } = parse(argv.slice(1));
+      const [id, sub, arg] = positionals;
+      if (!id) die("usage: attach -p <proj> <id> <image-path> [--name name]  |  attach -p <proj> <id> rm <filename>");
+      if (sub === "rm") {
+        if (!arg) die("attach rm needs a filename");
+        await store.removeAttachment(proj(values), id, arg, values.actor || "ui");
+        console.log(`removed ${arg} from ${id}`);
+        break;
+      }
+      if (!sub) die("attach needs an image path");
+      let buffer;
+      try {
+        buffer = readFileSync(sub);
+      } catch (e) {
+        die(`cannot read ${sub}: ${e.message}`);
+      }
+      const name = values.name || basename(sub);
+      const r = await store.addAttachment(proj(values), id, name, buffer, values.actor || "ui");
+      console.log(`attached ${r.filename} to ${id}`);
+      break;
+    }
+
     case "ls": {
       const { values } = parse(argv.slice(1));
       const { tickets } = await store.getBoard(proj(values));
@@ -298,7 +324,7 @@ try {
       console.log(
         [
           "clambake CLI",
-          "commands: new, move, update, ac, note, ls, show, behind, rm, projects, newproject, sprint",
+          "commands: new, move, update, ac, note, attach, ls, show, behind, rm, projects, newproject, sprint",
           "see top of cli.js for full usage",
         ].join("\n")
       );

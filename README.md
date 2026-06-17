@@ -53,9 +53,14 @@ npm start                       # prints the http://192.168.1.x:3000 URL
 
 # on any other machine (clambake checked out)
 export CLAMBAKE_URL=http://192.168.1.x:3000
-node cli.js ls   -p demo
-node cli.js new  -p demo --title "Filed from my laptop"
+node cli.js ls     -p demo
+node cli.js new    -p demo --title "Filed from my laptop"
+node cli.js attach -p demo DEMO-1 ./screenshot.png    # uploads the local image
 ```
+
+`attach` reads an image from the calling machine and uploads the bytes, so it
+works the same whether the board is local or remote. Remove one with
+`attach -p demo DEMO-1 rm <filename>`.
 
 Same commands, same flags as local mode. Like the web UI, this has **no auth** —
 anyone who can reach the port has full read/write, so keep it on a trusted network.
