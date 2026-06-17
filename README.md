@@ -84,10 +84,12 @@ Two processes write the same files — your browser (→ server) and the agent (
 - **Atomic writes** — every write goes to a temp file then `rename`s over the target, so a
   concurrent reader sees the whole old or whole new file, never a torn half.
 - **Per-ticket files** — edits to different tickets never collide.
-- **Optimistic concurrency** — the browser sends the snapshot it loaded; if the ticket changed
-  underneath you, the save is rejected with a 409 and the UI reloads the latest + toasts you to
-  reapply. No silent lost updates. The **CLI omits the check and always wins** — its read→write
-  window is sub-millisecond; your think-time in the modal is the only realistically stale writer.
+- **Optimistic concurrency** — every mutating write sends the `updatedAt` snapshot it read;
+  if the ticket changed underneath it, the save is rejected with a 409. The browser reloads the
+  latest + toasts you to reapply; the **CLI exits non-zero with the conflict message so the
+  caller can re-run** (it reads the ticket first, then writes with that stamp). No silent lost
+  updates — including read-modify-write edits like `ac check`. (The stamp is millisecond-grained,
+  so two writes landing in the same millisecond is the one residual gap.)
 - **Exclusive create** (`O_EXCL`) — two simultaneous "new ticket" calls can't grab the same id;
   the loser retries with the next number.
 
