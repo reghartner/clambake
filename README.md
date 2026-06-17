@@ -40,6 +40,26 @@ There's no auth, so anyone on your network can view/edit — fine for a home net
 - If a device can't connect, allow incoming connections for `node` in
   System Settings → Network → Firewall (if the firewall is on).
 
+### Driving the CLI from another machine
+
+By default `node cli.js …` edits the local data files, so it only works on the
+machine that holds them. To drive the board from another computer on the LAN,
+point the CLI at the host's server with `CLAMBAKE_URL` — every command then goes
+over the REST API instead of touching disk:
+
+```sh
+# on the host
+npm start                       # prints the http://192.168.1.x:3000 URL
+
+# on any other machine (clambake checked out)
+export CLAMBAKE_URL=http://192.168.1.x:3000
+node cli.js ls   -p demo
+node cli.js new  -p demo --title "Filed from my laptop"
+```
+
+Same commands, same flags as local mode. Like the web UI, this has **no auth** —
+anyone who can reach the port has full read/write, so keep it on a trusted network.
+
 ## How it works
 
 - **Source of truth = markdown files** under `data/projects/<slug>/tickets/<ID>.md`

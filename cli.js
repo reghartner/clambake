@@ -3,6 +3,10 @@
 // Wraps lib/store.js so agents get id allocation, updatedAt bumps, and
 // frontmatter validation without hand-authoring YAML.
 //
+// By default it edits the local data files. Set CLAMBAKE_URL to drive a remote
+// board over the LAN instead — every command then hits that server's REST API:
+//   CLAMBAKE_URL=http://192.168.1.50:3000 node cli.js ls -p demo
+//
 //   node cli.js new    -p <proj> --title "..." [--status planned] [--sprint s1]
 //                      [--priority high] [--ac "..."]... [--label x]... [--link url]... [--assignee a]
 //   node cli.js move   -p <proj> <id> <status>
@@ -20,7 +24,15 @@
 //   node cli.js sprint close -p <proj> <id>
 
 import { parseArgs } from "node:util";
-import * as store from "./lib/store.js";
+import { makeClient } from "./lib/api-client.js";
+
+// Set CLAMBAKE_URL=http://<host>:3000 to drive a remote board over the LAN;
+// otherwise read/write the local data files directly (the original behavior).
+// The HTTP client is async, the local store is sync — every call site awaits,
+// which is a no-op on plain return values.
+const store = process.env.CLAMBAKE_URL
+  ? makeClient(process.env.CLAMBAKE_URL)
+  : await import("./lib/store.js");
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
@@ -91,7 +103,7 @@ try {
   switch (cmd) {
     case "new": {
       const { values } = parse(argv.slice(1));
-      const t = store.createTicket(
+      const t = await store.createTicket(
         proj(values),
         {
           title: values.title,
@@ -116,7 +128,7 @@ try {
       const { values, positionals } = parse(argv.slice(1));
       const [id, status] = positionals;
       if (!id || !status) die("usage: move -p <proj> <id> <status>");
-      const t = store.updateTicket(proj(values), id, { status }, values.actor || "ui");
+      const t = await store.updateTicket(proj(values), id, { status }, values.actor || "ui");
       console.log(`${t.id} -> ${t.status}`);
       break;
     }
@@ -136,7 +148,7 @@ try {
       if (values["test-steps"] != null) patch.testSteps = values["test-steps"] === "none" ? "" : values["test-steps"];
       if (values.label) patch.labels = values.label;
       if (values.link) patch.links = values.link;
-      const t = store.updateTicket(proj(values), id, patch, values.actor || "ui");
+      const t = await store.updateTicket(proj(values), id, patch, values.actor || "ui");
       console.log(`updated ${t.id}`);
       break;
     }
@@ -145,7 +157,7 @@ try {
       const { values, positionals } = parse(argv.slice(1));
       const [id, sub, arg] = positionals;
       if (!id || !sub) die('usage: ac -p <proj> <id> add "text" | check <i> | uncheck <i>');
-      const current = store.getTicket(proj(values), id);
+      const current = await store.getTicket(proj(values), id);
       const ac = current.ac.slice();
       if (sub === "add") {
         if (!arg) die("ac add needs text");
@@ -157,7 +169,7 @@ try {
       } else {
         die(`unknown ac subcommand: ${sub}`);
       }
-      store.updateTicket(proj(values), id, { ac }, values.actor || "ui");
+      await store.updateTicket(proj(values), id, { ac }, values.actor || "ui");
       console.log(`${id} ac updated (${ac.filter((a) => a.done).length}/${ac.length})`);
       break;
     }
@@ -167,14 +179,14 @@ try {
       const id = positionals[0];
       const text = positionals.slice(1).join(" ");
       if (!id || !text) die('usage: note -p <proj> <id> "text"');
-      store.appendNote(proj(values), id, text, undefined, values.actor || "ui");
+      await store.appendNote(proj(values), id, text, undefined, values.actor || "ui");
       console.log(`note added to ${id}`);
       break;
     }
 
     case "ls": {
       const { values } = parse(argv.slice(1));
-      const { tickets } = store.getBoard(proj(values));
+      const { tickets } = await store.getBoard(proj(values));
       let list = tickets;
       if (values.status) list = list.filter((t) => t.status === values.status);
       if (values.sprint) list = list.filter((t) => t.sprint === values.sprint);
@@ -191,7 +203,7 @@ try {
       const { values, positionals } = parse(argv.slice(1));
       const id = positionals[0];
       if (!id) die("usage: show -p <proj> <id>");
-      const { tickets } = store.getBoard(proj(values));
+      const { tickets } = await store.getBoard(proj(values));
       const t = tickets.find((x) => x.id === id);
       if (!t) die(`no such ticket: ${id}`);
       out(t);
@@ -200,7 +212,7 @@ try {
 
     case "behind": {
       const { values } = parse(argv.slice(1));
-      const { tickets } = store.getBoard(proj(values));
+      const { tickets } = await store.getBoard(proj(values));
       const list = tickets.filter((t) => t.behind);
       if (!list.length) {
         console.log("nothing behind 🎉");
@@ -214,13 +226,13 @@ try {
       const { values, positionals } = parse(argv.slice(1));
       const id = positionals[0];
       if (!id) die("usage: rm -p <proj> <id>");
-      store.deleteTicket(proj(values), id);
+      await store.deleteTicket(proj(values), id);
       console.log(`deleted ${id}`);
       break;
     }
 
     case "projects": {
-      const list = store.listProjects();
+      const list = await store.listProjects();
       if (!list.length) console.log("(no projects)");
       for (const p of list) console.log(`${p.slug}  (${p.name})  prefix=${p.idPrefix} stale=${p.staleDays}d`);
       break;
@@ -230,7 +242,7 @@ try {
       const { values, positionals } = parse(argv.slice(1));
       const slug = positionals[0];
       if (!slug) die("usage: newproject <slug> [--name ...] [--prefix MET] [--stale 5]");
-      const p = store.createProject({
+      const p = await store.createProject({
         slug,
         name: values.name,
         idPrefix: values.prefix,
@@ -244,7 +256,7 @@ try {
       const sub = argv[1];
       const { values, positionals } = parse(argv.slice(2));
       if (sub === "new") {
-        const s = store.createSprint(proj(values), {
+        const s = await store.createSprint(proj(values), {
           id: values.id,
           name: values.name,
           startDate: values.start,
@@ -255,7 +267,7 @@ try {
       } else if (sub === "close") {
         const id = positionals[0];
         if (!id) die("usage: sprint close -p <proj> <id>");
-        store.updateSprint(proj(values), id, { status: "closed" });
+        await store.updateSprint(proj(values), id, { status: "closed" });
         console.log(`closed sprint ${id}`);
       } else if (sub === "edit") {
         const id = positionals[0];
@@ -265,15 +277,15 @@ try {
         if (values.start != null) patch.startDate = values.start;
         if (values.end != null) patch.endDate = values.end;
         if (values.goal != null) patch.goal = values.goal;
-        store.updateSprint(proj(values), id, patch);
+        await store.updateSprint(proj(values), id, patch);
         console.log(`updated sprint ${id}`);
       } else if (sub === "rm") {
         const id = positionals[0];
         if (!id) die("usage: sprint rm -p <proj> <id>");
-        const r = store.deleteSprint(proj(values), id);
+        const r = await store.deleteSprint(proj(values), id);
         console.log(`deleted sprint ${id}${r.unassigned ? ` (unassigned ${r.unassigned} ticket(s))` : ""}`);
       } else if (sub === "ls") {
-        for (const s of store.listSprints(proj(values))) {
+        for (const s of await store.listSprints(proj(values))) {
           console.log(`${s.id}  ${s.name}  [${s.status}]  ${s.startDate || "?"} → ${s.endDate || "?"}`);
         }
       } else {
