@@ -77,6 +77,34 @@ anyone who can reach the port has full read/write, so keep it on a trusted netwo
 - **Data location** is `<repo>/data/projects` by default; set `CLAMBAKE_DATA` (absolute or
   relative) to keep the ticket store somewhere else — e.g. inside the project being tracked.
 
+## Archiving finished work
+
+Done tickets pile up. Set **`archiveDoneAfterDays`** in a project's `project.json` and
+the board auto-archives a ticket that many days after it entered `done`:
+
+```json
+{ "name": "Demo", "idPrefix": "DEMO", "archiveDoneAfterDays": 2 }
+```
+
+- **Automatic** — the server sweeps on startup and every 10 minutes. Off by default
+  (`null`), so nothing is archived unless you opt a project in.
+- **Aged from `doneAt`** — the moment a ticket entered `done`, not its last edit, so a
+  late note doesn't reset the clock. Tickets finished before this existed fall back to
+  `updatedAt` (what the first sweep keys off).
+- **Recoverable** — archiving *moves* the file to `data/projects/<slug>/archive/<ID>.md`;
+  it leaves the board but isn't deleted. The board's **Archive** button lists archived
+  tickets and restores any of them; **Run sweep now** forces a pass.
+- **From the CLI** (works locally or over `CLAMBAKE_URL`):
+
+```bash
+node cli.js archive   -p demo            # sweep eligible done tickets now
+node cli.js archive   -p demo --dry-run  # show what would move
+node cli.js archive   -p demo --days 7   # one-off override of the threshold
+node cli.js archive   -p demo DEMO-3     # archive one ticket explicitly
+node cli.js archived  -p demo            # list archived tickets
+node cli.js unarchive -p demo DEMO-3     # restore to the board
+```
+
 ## Concurrency (you + the agent editing at once)
 
 Two processes write the same files — your browser (→ server) and the agent (→ CLI). Safe because:
@@ -118,9 +146,10 @@ lib/schema.js        defaults, id allocation, behind logic
 lib/store.js         file-backed read/write
 public/              the kanban UI (vanilla HTML/CSS/JS)
 data/projects/<slug>/
-  project.json       { name, idPrefix, staleDays, columns }
+  project.json       { name, idPrefix, staleDays, archiveDoneAfterDays, columns }
   sprints/<id>.md
   tickets/<ID>.md
+  archive/<ID>.md    done tickets aged out of the board (recoverable)
 AGENTS.md            the contract an agent follows to drive the board
 ```
 

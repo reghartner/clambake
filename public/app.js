@@ -723,6 +723,80 @@ function closeSprintModal() {
   el("sprintModal").classList.add("hidden");
 }
 
+// ---- archive ---------------------------------------------------------------
+async function openArchiveModal() {
+  const body = el("archiveModalBody");
+  const title = `Archive — ${escapeHtml(state.board.project.name)}`;
+  body.innerHTML = `<h2>${title}</h2><div class="muted">Loading…</div>`;
+  el("archiveModal").classList.remove("hidden");
+
+  let list;
+  try {
+    list = await api("GET", `/api/projects/${state.project}/archive`);
+  } catch (e) {
+    body.innerHTML = `<h2>${title}</h2><div class="muted">Failed to load: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+
+  const cfg = state.board.project.archiveDoneAfterDays;
+  const cfgLine =
+    cfg != null
+      ? `Auto-archiving done tickets <b>${escapeHtml(String(cfg))}</b> day(s) after they're done.`
+      : `Auto-archive is <b>off</b> — set <code>archiveDoneAfterDays</code> in this project's <code>project.json</code> to enable.`;
+
+  const rows = list
+    .map(
+      (t) => `
+      <div class="sprint-row" data-id="${escapeAttr(t.id)}">
+        <div class="sr-head">
+          <span class="sr-name">${escapeHtml(t.id)} · ${escapeHtml(t.title)}</span>
+          <span class="sr-badge count">done ${t.doneAt ? escapeHtml(String(t.doneAt).slice(0, 10)) : "?"}</span>
+        </div>
+        <div class="sr-actions">
+          <button class="btn sm primary ar-unarchive">Unarchive</button>
+        </div>
+      </div>`
+    )
+    .join("");
+
+  body.innerHTML = `
+    <h2>${title}</h2>
+    <div class="muted" style="margin-bottom:8px">${cfgLine} Archived tickets leave the board but stay under <code>archive/</code> and can be restored.</div>
+    ${rows || '<div class="muted">Nothing archived yet.</div>'}
+    <div class="sprint-new">
+      <button class="btn" id="ar_sweep">Run sweep now</button>
+    </div>`;
+
+  body.querySelectorAll(".sprint-row").forEach((row) => {
+    const id = row.dataset.id;
+    row.querySelector(".ar-unarchive").addEventListener("click", async () => {
+      try {
+        await api("POST", `/api/projects/${state.project}/tickets/${id}/unarchive`);
+        await refresh();
+        openArchiveModal();
+        toast(`Unarchived ${id}`, "", "success");
+      } catch (e) {
+        toast("Unarchive failed", e.message, "error");
+      }
+    });
+  });
+
+  el("ar_sweep").addEventListener("click", async () => {
+    try {
+      const r = await api("POST", `/api/projects/${state.project}/sweep`);
+      await refresh();
+      openArchiveModal();
+      toast(r.archived.length ? `Archived ${r.archived.length}` : "Nothing to archive", r.archived.join(", "), "success");
+    } catch (e) {
+      toast("Sweep failed", e.message, "error");
+    }
+  });
+}
+
+function closeArchiveModal() {
+  el("archiveModal").classList.add("hidden");
+}
+
 function renderNote(n) {
   return `<div class="note"><div class="ts">${escapeHtml(n.ts)}</div>${escapeHtml(n.text)}</div>`;
 }
@@ -778,9 +852,14 @@ function bindTopbar() {
   el("sprintModal").addEventListener("click", (e) => {
     if (e.target.id === "sprintModal") closeSprintModal();
   });
+  el("archiveModalClose").addEventListener("click", closeArchiveModal);
+  el("archiveModal").addEventListener("click", (e) => {
+    if (e.target.id === "archiveModal") closeArchiveModal();
+  });
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       if (!el("sprintModal").classList.contains("hidden")) closeSprintModal();
+      else if (!el("archiveModal").classList.contains("hidden")) closeArchiveModal();
       else if (state.modalId) closeModal();
     }
   });
@@ -829,6 +908,11 @@ function bindTopbar() {
   el("sprintsBtn").addEventListener("click", () => {
     if (!state.project) return alert("Create a project first.");
     openSprintModal();
+  });
+
+  el("archiveBtn").addEventListener("click", () => {
+    if (!state.project) return alert("Create a project first.");
+    openArchiveModal();
   });
 
   el("newProjectBtn").addEventListener("click", async () => {

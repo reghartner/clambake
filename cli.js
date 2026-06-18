@@ -19,6 +19,9 @@
 //   node cli.js show   -p <proj> <id>
 //   node cli.js behind -p <proj>
 //   node cli.js rm     -p <proj> <id>
+//   node cli.js archive   -p <proj> [<id>] [--days N] [--dry-run]   sweep, or archive one
+//   node cli.js archived  -p <proj>                                 list archived tickets
+//   node cli.js unarchive -p <proj> <id>                            restore to the board
 //   node cli.js projects
 //   node cli.js newproject <slug> [--name "..."] [--prefix MET] [--stale 5]
 //   node cli.js sprint new -p <proj> --id s1 --name "Sprint 1" [--start ...] [--end ...] [--goal ...]
@@ -62,6 +65,8 @@ function parse(args, { multi = [] } = {}) {
     end: { type: "string" },
     goal: { type: "string" },
     behind: { type: "boolean" },
+    days: { type: "string" },
+    "dry-run": { type: "boolean" },
     ac: { type: "string", multiple: true },
     label: { type: "string", multiple: true },
     link: { type: "string", multiple: true },
@@ -210,6 +215,44 @@ try {
       break;
     }
 
+    case "archive": {
+      const { values, positionals } = parse(argv.slice(1));
+      const id = positionals[0];
+      if (id) {
+        await store.archiveTicket(proj(values), id);
+        console.log(`archived ${id}`);
+        break;
+      }
+      const days = values.days != null ? Number(values.days) : undefined;
+      const r = await store.sweepArchive(proj(values), { days, dryRun: !!values["dry-run"] });
+      if (values["dry-run"]) {
+        console.log(r.eligible.length ? `would archive: ${r.eligible.join(", ")}` : "nothing eligible");
+      } else {
+        console.log(r.archived.length ? `archived: ${r.archived.join(", ")}` : "nothing to archive");
+      }
+      break;
+    }
+
+    case "archived": {
+      const { values } = parse(argv.slice(1));
+      const list = await store.listArchived(proj(values));
+      if (!list.length) {
+        console.log("(no archived tickets)");
+        break;
+      }
+      for (const t of list) console.log(`${t.id}  ${t.title}  (done ${t.doneAt ? t.doneAt.slice(0, 10) : "?"})`);
+      break;
+    }
+
+    case "unarchive": {
+      const { values, positionals } = parse(argv.slice(1));
+      const id = positionals[0];
+      if (!id) die("usage: unarchive -p <proj> <id>");
+      await store.unarchiveTicket(proj(values), id);
+      console.log(`unarchived ${id}`);
+      break;
+    }
+
     case "ls": {
       const { values } = parse(argv.slice(1));
       const { tickets } = await store.getBoard(proj(values));
@@ -324,7 +367,7 @@ try {
       console.log(
         [
           "clambake CLI",
-          "commands: new, move, update, ac, note, attach, ls, show, behind, rm, projects, newproject, sprint",
+          "commands: new, move, update, ac, note, attach, archive, archived, unarchive, ls, show, behind, rm, projects, newproject, sprint",
           "see top of cli.js for full usage",
         ].join("\n")
       );
