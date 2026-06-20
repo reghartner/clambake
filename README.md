@@ -98,15 +98,40 @@ re-run. It exits when a ticket's **status** changes (a column move) or a ticket 
 added/removed — not on every minor edit.
 
 ```bash
-node watch.js <project> [--ignore-actor <id>] [--heartbeat-ms <n>]
+node watch.js <project> [--ignore-actor <id>] [--heartbeat-ms <n>] [--poll-ms <n>]
 ```
 
 - `--ignore-actor <id>` — skip changes whose `lastActor` is `<id>`, so an agent isn't
   woken by its own writes (pairs with the CLI `--actor` flag).
 - `--heartbeat-ms <n>` — exit after `n` ms with no change (default 30 min) so the watch
   can't silently die.
+- `--poll-ms <n>` — backstop poll interval (default 5s; `0` disables). `fs.watch` can miss
+  the store's atomic temp-file→`rename` writes on macOS, so the watcher also re-checks on
+  this timer; a missed filesystem event is still caught within `n` ms.
 - **Gap-safe:** it persists a snapshot (`<project>/.watch_state.json`, gitignored) and
   uses it as the baseline on start, so a move that lands between watches is still caught.
+- **Liveness:** on arm and every minute it writes `<project>/.watch_live.json` (pid,
+  `armedAt`, `lastCheckAt`, all gitignored). A dead watcher and a quiet board otherwise
+  look identical — a stale `lastCheckAt` means the watcher died and should be re-armed.
+
+### Keeping the watcher alive across fires
+
+`watch.js` is a one-shot edge detector: it **exits** on the first change so a turn-based
+agent can react, which means something must re-arm it afterward. With many independent
+sessions watching one board, a single missed re-arm silently blinds that session. The
+`watch-loop.sh` supervisor closes that gap — it relaunches the watcher after every exit
+and appends each fire to a wake log the agent tails, decoupling "watcher alive" from
+"agent attentive":
+
+```bash
+# detached: keeps the watcher armed across turns; tail the wake log to see fires
+nohup ./watch-loop.sh <project> --ignore-actor <id> >/dev/null 2>&1 &
+tail -f ~/.clambake_wake_<project>.log
+```
+
+Because the watcher is gap-safe, the instant re-arm catches anything that landed during
+the restart. The wake log's last `re-arming` line (UTC) doubles as the supervisor's own
+liveness signal.
 
 ## Layout
 
@@ -114,6 +139,7 @@ node watch.js <project> [--ignore-actor <id>] [--heartbeat-ms <n>]
 server.js            HTTP API + serves the board
 cli.js               agent/CLI entry point (node cli.js …)
 watch.js             optional: fs.watch a project, exit on first change (for host harnesses)
+watch-loop.sh        optional: supervisor that auto-re-arms watch.js after each fire
 lib/schema.js        defaults, id allocation, behind logic
 lib/store.js         file-backed read/write
 public/              the kanban UI (vanilla HTML/CSS/JS)
