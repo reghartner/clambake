@@ -17,5 +17,6 @@ node_modules/
 # uploaded attachment binaries (incl. the demo's) — don't track screenshots
 data/projects/*/attachments/
 
-# watcher state snapshots
+# watcher state snapshots + liveness markers
 data/projects/*/.watch_state.json
+data/projects/*/.watch_live.json
