@@ -136,8 +136,50 @@ app.delete(
   h((req) => store.deleteSprint(req.params.p, req.params.id))
 );
 
+// ---- archive ----
+app.get(
+  "/api/projects/:p/archive",
+  h((req) => store.listArchived(req.params.p))
+);
+
+app.post(
+  "/api/projects/:p/tickets/:id/archive",
+  h((req) => store.archiveTicket(req.params.p, req.params.id))
+);
+
+app.post(
+  "/api/projects/:p/tickets/:id/unarchive",
+  h((req) => store.unarchiveTicket(req.params.p, req.params.id))
+);
+
+// Run a sweep now. Optional ?days=N overrides the project's archiveDoneAfterDays;
+// ?dryRun=1 reports what would move without touching anything.
+app.post(
+  "/api/projects/:p/sweep",
+  h((req) =>
+    store.sweepArchive(req.params.p, {
+      days: req.query.days != null ? Number(req.query.days) : undefined,
+      dryRun: req.query.dryRun === "1" || req.query.dryRun === "true",
+    })
+  )
+);
+
 // ---- static UI ----
 app.use(express.static(path.join(__dirname, "public")));
+
+// Periodically auto-archive done tickets that have aged past each project's
+// archiveDoneAfterDays. Runs on startup and every 10 min; projects that haven't
+// opted in are no-ops. Errors are logged, never fatal.
+const ARCHIVE_SWEEP_MS = 10 * 60 * 1000;
+function sweepArchives() {
+  try {
+    const moved = store.sweepAllArchives();
+    const ids = Object.values(moved).flat();
+    if (ids.length) console.log(`auto-archived ${ids.length} ticket(s): ${ids.join(", ")}`);
+  } catch (err) {
+    console.error("archive sweep failed:", err.message);
+  }
+}
 
 app.listen(PORT, HOST, () => {
   console.log("Clambake board running:");
@@ -149,5 +191,8 @@ app.listen(PORT, HOST, () => {
       }
     }
   }
+  sweepArchives();
+  // unref so the timer never keeps the process alive on its own.
+  setInterval(sweepArchives, ARCHIVE_SWEEP_MS).unref();
 });
 
