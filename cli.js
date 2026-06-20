@@ -131,7 +131,10 @@ try {
       const { values, positionals } = parse(argv.slice(1));
       const [id, status] = positionals;
       if (!id || !status) die("usage: move -p <proj> <id> <status>");
-      const t = await store.updateTicket(proj(values), id, { status }, values.actor || "ui");
+      // Send the snapshot we read so a concurrent write is rejected with 409
+      // rather than silently clobbered — the caller re-runs to retry.
+      const before = await store.getTicket(proj(values), id);
+      const t = await store.updateTicket(proj(values), id, { status, expectedUpdatedAt: before.updatedAt }, values.actor || "ui");
       console.log(`${t.id} -> ${t.status}`);
       break;
     }
@@ -151,6 +154,9 @@ try {
       if (values["test-steps"] != null) patch.testSteps = values["test-steps"] === "none" ? "" : values["test-steps"];
       if (values.label) patch.labels = values.label;
       if (values.link) patch.links = values.link;
+      // Optimistic-concurrency: reject (409) if the ticket moved under us.
+      const before = await store.getTicket(proj(values), id);
+      patch.expectedUpdatedAt = before.updatedAt;
       const t = await store.updateTicket(proj(values), id, patch, values.actor || "ui");
       console.log(`updated ${t.id}`);
       break;
@@ -172,7 +178,9 @@ try {
       } else {
         die(`unknown ac subcommand: ${sub}`);
       }
-      await store.updateTicket(proj(values), id, { ac }, values.actor || "ui");
+      // This is a read-modify-write on the ac array; pass the snapshot's stamp so
+      // a concurrent edit is rejected (409) instead of silently lost.
+      await store.updateTicket(proj(values), id, { ac, expectedUpdatedAt: current.updatedAt }, values.actor || "ui");
       console.log(`${id} ac updated (${ac.filter((a) => a.done).length}/${ac.length})`);
       break;
     }
@@ -182,7 +190,8 @@ try {
       const id = positionals[0];
       const text = positionals.slice(1).join(" ");
       if (!id || !text) die('usage: note -p <proj> <id> "text"');
-      await store.appendNote(proj(values), id, text, undefined, values.actor || "ui");
+      const before = await store.getTicket(proj(values), id);
+      await store.appendNote(proj(values), id, text, before.updatedAt, values.actor || "ui");
       console.log(`note added to ${id}`);
       break;
     }
