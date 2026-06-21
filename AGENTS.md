@@ -41,11 +41,8 @@ node cli.js new -p demo --title "Results screen" --status planned \
 
 node cli.js move   -p demo DEMO-1 blocked        # columns: backlog planned active blocked testingNeeded needsRework done
 node cli.js note   -p demo DEMO-1 "PR #12 open, awaiting review"
-node cli.js update -p demo DEMO-1 --test-steps "## Steps
-1. Open X
-2. Click Y
-
-**Expected:** Z"        # markdown; rendered for the human. --test-steps none to clear
+node cli.js update -p demo DEMO-1 --test-steps @steps.md   # load markdown from a file (recommended)
+node cli.js update -p demo DEMO-1 -T -                     # …or pipe it on stdin; --test-steps none to clear
 node cli.js ac     -p demo DEMO-1 add "handles empty score"
 node cli.js ac     -p demo DEMO-1 check 0      # tick AC index 0 (uncheck = uncheck)
 node cli.js update -p demo DEMO-1 --priority high --sprint sprint-1 --due 2026-07-01

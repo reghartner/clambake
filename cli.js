@@ -26,11 +26,18 @@
 //   node cli.js newproject <slug> [--name "..."] [--prefix MET] [--stale 5]
 //   node cli.js sprint new -p <proj> --id s1 --name "Sprint 1" [--start ...] [--end ...] [--goal ...]
 //   node cli.js sprint close -p <proj> <id>
+//
+// Short flags:  -p project  -t title  -s status  -S sprint  -e epic  -a actor
+//               -A assignee  -d due  -i id  -l label  -T test-steps
+// Long-value loading: any text flag taking markdown (esp. -T/--test-steps) accepts
+//   -T @file   (read from a file)   or   -T -   (read from stdin)   so multi-line
+//   test steps don't need shell-escaping. Use @@ for a literal leading '@'.
 
 import { parseArgs } from "node:util";
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { makeClient } from "./lib/api-client.js";
+import { PRIORITIES } from "./lib/schema.js";
 
 // Set CLAMBAKE_URL=http://<host>:3000 to drive a remote board over the LAN;
 // otherwise read/write the local data files directly (the original behavior).
@@ -45,19 +52,22 @@ const cmd = argv[0];
 
 // Generic flag parser. Repeatable flags (ac/label/link) collect into arrays.
 function parse(args, { multi = [] } = {}) {
+  // Short aliases: lowercase = the most-used flag, Capital = its sibling when the
+  // lowercase letter is already taken (e.g. -t title / -T test-steps, -s status /
+  // -S sprint, -a actor / -A assignee). Agents kept tripping over -t vs --title.
   const options = {
     p: { type: "string", short: "p" },
     project: { type: "string" },
-    title: { type: "string" },
-    status: { type: "string" },
-    sprint: { type: "string" },
-    epic: { type: "string" },
+    title: { type: "string", short: "t" },
+    status: { type: "string", short: "s" },
+    sprint: { type: "string", short: "S" },
+    epic: { type: "string", short: "e" },
     priority: { type: "string" },
-    assignee: { type: "string" },
-    due: { type: "string" },
-    "test-steps": { type: "string" },
-    actor: { type: "string" },
-    id: { type: "string" },
+    assignee: { type: "string", short: "A" },
+    due: { type: "string", short: "d" },
+    "test-steps": { type: "string", short: "T" },
+    actor: { type: "string", short: "a" },
+    id: { type: "string", short: "i" },
     name: { type: "string" },
     prefix: { type: "string" },
     stale: { type: "string" },
@@ -68,11 +78,65 @@ function parse(args, { multi = [] } = {}) {
     days: { type: "string" },
     "dry-run": { type: "boolean" },
     ac: { type: "string", multiple: true },
-    label: { type: "string", multiple: true },
+    label: { type: "string", short: "l", multiple: true },
     link: { type: "string", multiple: true },
   };
-  const { values, positionals } = parseArgs({ args, options, allowPositionals: true, strict: false });
-  return { values, positionals };
+  let parsed;
+  try {
+    // strict: an unknown/misspelled flag is an ERROR, not silently dropped — so a
+    // typo'd --titel no longer creates a ticket with no title and no warning.
+    parsed = parseArgs({ args, options, allowPositionals: true, strict: true });
+  } catch (e) {
+    die(parseErrorMessage(e, options));
+  }
+  return { values: parsed.values, positionals: parsed.positionals };
+}
+
+// Turn a parseArgs failure into actionable feedback: name the bad flag, suggest the
+// closest real one, and list what's valid.
+function parseErrorMessage(e, options) {
+  const longs = Object.keys(options).filter((k) => k !== "p"); // 'p' is the -p alias of project
+  const flagList = longs
+    .map((k) => (options[k].short ? `--${k}/-${options[k].short}` : `--${k}`))
+    .join(", ");
+  const raw = (e.message.match(/'(-{1,2}[^']+)'/) || [])[1];
+  const bad = raw ? raw.split(/[ ,]/)[0] : null; // node sometimes echoes "-t, --title <value>"
+  if (e.code === "ERR_PARSE_ARGS_UNKNOWN_OPTION" && bad) {
+    // Only did-you-mean for long flags — guessing a long name from a one-char short is noise.
+    const guess = bad.startsWith("--") ? closest(bad.replace(/^-+/, ""), longs) : null;
+    const hint = guess ? ` Did you mean --${guess}?` : "";
+    return `unknown flag ${bad}.${hint}\nvalid flags: ${flagList}`;
+  }
+  if (e.code === "ERR_PARSE_ARGS_INVALID_OPTION_VALUE" && bad) {
+    return `flag ${bad} needs a value (e.g. ${bad} <value>).\nvalid flags: ${flagList}`;
+  }
+  return `${e.message}\nvalid flags: ${flagList}`;
+}
+
+// Nearest known flag by edit distance (only if reasonably close), for did-you-mean.
+function closest(word, candidates) {
+  let best = null;
+  let bestD = Infinity;
+  for (const c of candidates) {
+    const d = editDistance(word, c);
+    if (d < bestD) {
+      bestD = d;
+      best = c;
+    }
+  }
+  return bestD <= Math.max(2, Math.ceil(word.length / 3)) ? best : null;
+}
+function editDistance(a, b) {
+  const dp = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++)
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+  return dp[a.length][b.length];
 }
 
 function proj(values) {
@@ -81,9 +145,40 @@ function proj(values) {
   return p;
 }
 
+// Enum-value guards: reject a bad --priority / status with the valid set, instead of
+// silently writing a ghost value the board can't display.
+function checkPriority(v) {
+  if (v != null && !PRIORITIES.includes(v)) die(`invalid --priority "${v}". valid: ${PRIORITIES.join(", ")}`);
+}
+async function checkStatus(slug, v) {
+  if (v == null) return;
+  const { project } = await store.getBoard(slug);
+  const ids = (project?.columns || []).map((c) => c.id);
+  if (!ids.length) return; // columns unknown (e.g. minimal remote) — can't validate, don't block
+  if (!ids.includes(v)) die(`invalid status "${v}" for ${slug}. valid columns: ${ids.join(", ")}`);
+}
+
 function die(msg) {
   console.error(`error: ${msg}`);
   process.exit(1);
+}
+
+// Resolve a string flag that may load from a file or stdin instead of being inline.
+// Lets agents pass multi-line markdown (e.g. test steps) without shell-escaping it:
+//   -T @steps.md   reads the file        -T -   reads stdin
+// A literal leading '@' can be escaped as '@@'.
+function loadText(v) {
+  if (v == null) return v;
+  if (v === "-") return readFileSync(0, "utf8");
+  if (v.startsWith("@@")) return v.slice(1);
+  if (v.startsWith("@")) {
+    try {
+      return readFileSync(v.slice(1), "utf8");
+    } catch (e) {
+      die(`cannot read ${v.slice(1)}: ${e.message}`);
+    }
+  }
+  return v;
 }
 
 function out(obj) {
@@ -111,6 +206,8 @@ try {
   switch (cmd) {
     case "new": {
       const { values } = parse(argv.slice(1));
+      checkPriority(values.priority);
+      await checkStatus(proj(values), values.status);
       const t = await store.createTicket(
         proj(values),
         {
@@ -121,7 +218,7 @@ try {
           priority: values.priority,
           assignee: values.assignee,
           dueDate: values.due,
-          testSteps: values["test-steps"],
+          testSteps: loadText(values["test-steps"]),
           labels: values.label,
           links: values.link,
           ac: values.ac,
@@ -136,6 +233,7 @@ try {
       const { values, positionals } = parse(argv.slice(1));
       const [id, status] = positionals;
       if (!id || !status) die("usage: move -p <proj> <id> <status>");
+      await checkStatus(proj(values), status);
       // Send the snapshot we read so a concurrent write is rejected with 409
       // rather than silently clobbered — the caller re-runs to retry.
       const before = await store.getTicket(proj(values), id);
@@ -148,6 +246,8 @@ try {
       const { values, positionals } = parse(argv.slice(1));
       const id = positionals[0];
       if (!id) die("usage: update -p <proj> <id> [flags]");
+      checkPriority(values.priority);
+      await checkStatus(proj(values), values.status);
       const patch = {};
       if (values.title != null) patch.title = values.title;
       if (values.status != null) patch.status = values.status;
@@ -156,7 +256,7 @@ try {
       if (values.priority != null) patch.priority = values.priority;
       if (values.assignee != null) patch.assignee = values.assignee;
       if (values.due != null) patch.dueDate = values.due === "none" ? null : values.due;
-      if (values["test-steps"] != null) patch.testSteps = values["test-steps"] === "none" ? "" : values["test-steps"];
+      if (values["test-steps"] != null) patch.testSteps = values["test-steps"] === "none" ? "" : loadText(values["test-steps"]);
       if (values.label) patch.labels = values.label;
       if (values.link) patch.links = values.link;
       // Optimistic-concurrency: reject (409) if the ticket moved under us.

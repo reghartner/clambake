@@ -65,6 +65,13 @@ works the same whether the board is local or remote. Remove one with
 Same commands, same flags as local mode. Like the web UI, this has **no auth** —
 anyone who can reach the port has full read/write, so keep it on a trusted network.
 
+Most flags have short aliases (`-t`/`--title`, `-s`/`--status`, `-e`/`--epic`, …;
+capitals for the siblings, `-T`/`--test-steps`, `-S`/`--sprint`, `-A`/`--assignee`).
+A misspelled or value-less flag, or an invalid `--priority`/status, now fails with an
+explanatory message (and a did-you-mean) instead of being silently ignored. Flags that
+take markdown accept `@file` or `-` (stdin) so multi-line test steps don't need escaping:
+`node cli.js update -p demo DEMO-1 -T @steps.md`.
+
 ## How it works
 
 - **Source of truth = markdown files** under `data/projects/<slug>/tickets/<ID>.md`
