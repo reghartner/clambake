@@ -67,6 +67,9 @@ node cli.js note     -p demo DEMO-1 "@pm need a decision" --actor me  # tag some
 node cli.js watching -p demo --actor me              # show your subscription
 node cli.js unwatch  -p demo --actor me --all        # stop watching
 node cli.js watch    -p demo --actor me --epic Auth --notify http://host:9000/wake  # optional: webhook push instead of pulling
+# event-driven WAKE of an idle session: background a per-session one-shot that 204s + EXITS on
+# the first POST (its exit re-invokes you); a long-lived log sink can't wake you. See docs/agent-guide.md.
+node scripts/wake-once.js 9876 &                     # unique port per actor; --notify http://localhost:9876/wake -> on wake, drain inbox + relaunch
 
 node cli.js sprint new   -p <project> --id sprint-2 --name "Sprint 2" --end 2026-07-15 --goal "…"
 node cli.js sprint edit  -p <project> sprint-2 --name "…" --start … --end … --goal "…"

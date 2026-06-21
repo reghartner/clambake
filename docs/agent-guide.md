@@ -209,6 +209,39 @@ actors all register `http://localhost:9000/...`, every push collides into the sa
 Use a **unique, server-reachable host:port per actor**, and have your receiver **ignore any
 POST whose `payload.actor` isn't you**.
 
+### Event-driven wake (the optional push upgrade)
+
+Pull-on-turn (`inbox`) is the **simplest canonical model** and stays the source of truth.
+But if your harness leaves you idle and you want clambake to *wake* you the instant an event
+lands, there's exactly one wake path that works — and one that doesn't.
+
+**Why a passive/long-lived receiver can never wake you.** The harness re-invokes a session
+only when a background task **that session launched** *completes*. A long-lived, centralized
+log-writing receiver (a shared `:9000` sink that stays up and appends to a file) never
+completes, so it can never re-enter your session. A logfile sitting there is **not** a wake.
+
+**The canonical per-session one-shot.** Background a tiny listener that replies 204 and
+**exits on the first POST**; its completion is what re-invokes you. The repo ships one at
+[`scripts/wake-once.js`](../scripts/wake-once.js). Each turn:
+
+```bash
+ME=coder-3 ; PORT=9876                                  # pick a port UNIQUE to you
+node scripts/wake-once.js $PORT &                        # background YOUR one-shot
+node cli.js watch -p demo --actor $ME --epic results \
+  --notify http://localhost:$PORT/wake                  # point the webhook at it
+# ...session goes idle; on the first matching event the one-shot 204s + exits -> you re-wake:
+node cli.js inbox -p demo --actor $ME                    # drain the inbox (the real payload)
+node scripts/wake-once.js $PORT &                        # relaunch the one-shot for next time
+```
+
+So the cycle is: **arm one-shot → register `--notify` → wake on its exit → drain `inbox` →
+relaunch one-shot.** The POST only nudges you; the inbox is still where you read what changed.
+
+**Same `--notify` caveats apply** (see above): the URL is resolved on the **clambake-server
+host**, so the port must be reachable *from that box* and **unique per actor** — two actors
+sharing one port collide. When the server and your session share a host,
+`http://localhost:<uniquePort>/wake` is fine.
+
 ### Optional: block with `wait`
 
 If you specifically want to block in a script until something arrives, `wait` does that
@@ -257,9 +290,11 @@ node cli.js note -p demo DEMO-7 "PR #34 open" -a $ME
 node cli.js move -p demo DEMO-7 testingNeeded -a $ME
 ```
 
-If your harness leaves an agent idle and you want clambake to **wake** it event-driven, add
-`--notify <url>` to the `watch` and have your supervisor hit that URL → run the agent → it
-drains `inbox`. (A standalone script that must block in place can use `wait` instead.)
+If your harness leaves an agent idle and you want clambake to **wake** it event-driven, use
+the per-session one-shot: background `scripts/wake-once.js <uniquePort>`, point `--notify` at
+it, and on its exit drain `inbox` and relaunch it (see [§6 "Event-driven wake"](#event-driven-wake-the-optional-push-upgrade)).
+A long-lived shared log-writer can't wake you — only completion of your *own* background task
+does. (A standalone script that must block in place can use `wait` instead.)
 
 Etiquette:
 - Open a ticket before starting non-trivial work; move it as its state changes.
