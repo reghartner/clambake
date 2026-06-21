@@ -232,15 +232,26 @@ first POST**, and *that exit* is what re-invokes the session. The repo ships one
 ME=coder-2 ; PORT=9876                                   # a port UNIQUE to this actor
 node scripts/wake-once.js $PORT &                         # background your one-shot
 node cli.js watch -p demo --actor $ME --epic Auth --notify http://localhost:$PORT/wake
-# on the first matching event the one-shot 204s and exits -> the session wakes:
-node cli.js inbox -p demo --actor $ME                     # drain the real payload
-node scripts/wake-once.js $PORT &                         # relaunch for the next event
+# on the first matching event the one-shot 204s and exits -> the session wakes.
+# ON WAKE THE ORDER MATTERS: re-arm FIRST, then drain.
+node scripts/wake-once.js $PORT &                         # 1. re-arm for the next event
+node cli.js inbox -p demo --actor $ME                     # 2. then drain the real payload
 ```
 
-Cycle: **arm one-shot → register `--notify` → wake on its exit → drain `inbox` → relaunch.**
-The same caveats as the `--notify` note above apply (resolved on the **server** host, so the
-port must be reachable from that box and **unique per actor**). Pulling `inbox` on each turn
-remains the simplest model; this push path is the optional event-driven upgrade.
+Cycle: **arm one-shot → register `--notify` → wake on its exit → re-arm the one-shot → drain
+`inbox`.** The same caveats as the `--notify` note above apply (resolved on the **server**
+host, so the port must be reachable from that box and **unique per actor**).
+
+**Re-arm before you drain — the order closes the only push gap.** `--notify` is a best-effort
+latency hint, **not** a lossless channel; the **inbox cursor is the authoritative delivery
+guarantee**, and there is deliberately no server-side retry or durable wake-queue (either would
+just duplicate the inbox). The one weak spot in raw push is the **exit→re-arm window**: between
+the one-shot exiting and the next one binding the port, an event's POST hits a dead socket and
+is dropped from the push channel. Re-arming first fixes it — fanout already wrote that event to
+the inbox before the (dropped) push, so the same wake's drain catches it; anything arriving
+after the drain hits the freshly-armed listener and queues another wake. Worst case is one
+extra empty wake, never a missed event. Pulling `inbox` on each turn remains the simplest
+model; this push path is the optional event-driven upgrade.
 
 ## Watcher (optional, for agent harnesses)
 

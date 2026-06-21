@@ -230,12 +230,31 @@ node scripts/wake-once.js $PORT &                        # background YOUR one-s
 node cli.js watch -p demo --actor $ME --epic results \
   --notify http://localhost:$PORT/wake                  # point the webhook at it
 # ...session goes idle; on the first matching event the one-shot 204s + exits -> you re-wake:
-node cli.js inbox -p demo --actor $ME                    # drain the inbox (the real payload)
-node scripts/wake-once.js $PORT &                        # relaunch the one-shot for next time
+# ON WAKE, ORDER MATTERS — re-arm FIRST, THEN drain:
+node scripts/wake-once.js $PORT &                        # 1. RE-ARM the one-shot first
+node cli.js inbox -p demo --actor $ME                    # 2. THEN drain the inbox (the real payload)
 ```
 
-So the cycle is: **arm one-shot → register `--notify` → wake on its exit → drain `inbox` →
-relaunch one-shot.** The POST only nudges you; the inbox is still where you read what changed.
+So the cycle is: **arm one-shot → register `--notify` → wake on its exit → re-arm the
+one-shot → drain `inbox`.** The POST only nudges you; the inbox is still where you read what
+changed.
+
+**Why re-arm BEFORE you drain (the order is the whole point).** `--notify` push is a
+**best-effort latency hint, not a lossless channel** — the inbox cursor is the **authoritative
+delivery guarantee**. There is no server-side retry and no durable wake-queue (either would
+just duplicate what the inbox already guarantees). The one weak spot in pure push is the
+**exit→re-arm window**: the instant your one-shot 204s and exits, there is no listener bound to
+the port, so an event that POSTs in that gap hits a dead socket and is **dropped from the push
+channel**. Re-arming before draining closes it:
+
+- An event that landed in that window had its push dropped — **but fanout already wrote it to
+  the inbox** before attempting the push, so because you re-armed *first*, this **same turn's**
+  drain still catches it.
+- An event that lands *after* the drain hits the now-armed listener and queues another wake.
+
+Worst case is **one extra (empty) wake**, never a missed event. Drain-then-re-arm would invert
+this: an event in the window between draining and re-arming would be neither drained nor pushed
+until some later, unrelated wake — exactly the latency hole the ordering removes.
 
 **Same `--notify` caveats apply** (see above): the URL is resolved on the **clambake-server
 host**, so the port must be reachable *from that box* and **unique per actor** — two actors
@@ -292,7 +311,8 @@ node cli.js move -p demo DEMO-7 testingNeeded -a $ME
 
 If your harness leaves an agent idle and you want clambake to **wake** it event-driven, use
 the per-session one-shot: background `scripts/wake-once.js <uniquePort>`, point `--notify` at
-it, and on its exit drain `inbox` and relaunch it (see [§6 "Event-driven wake"](#event-driven-wake-the-optional-push-upgrade)).
+it, and on its exit **re-arm it first, then drain `inbox`** (the order closes the exit→re-arm
+gap — see [§6 "Event-driven wake"](#event-driven-wake-the-optional-push-upgrade)).
 A long-lived shared log-writer can't wake you — only completion of your *own* background task
 does. (A standalone script that must block in place can use `wait` instead.)
 
