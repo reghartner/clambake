@@ -15,9 +15,12 @@
 // This script is the opposite: a tiny server the session backgrounds itself. On the FIRST
 // request it replies 204, closes the server, and EXITS 0. That exit is the completion of a
 // background task the session launched, which is exactly what re-invokes the session. The
-// woken session then drains its inbox, reacts, and relaunches this one-shot for the next
-// event. Pull-on-turn (`cli.js inbox`) stays the durable source of truth; this push path is
-// the optional event-driven upgrade that removes the idle wait.
+// woken session then RE-ARMS this one-shot FIRST and THEN drains its inbox. That order is
+// load-bearing: an event landing in the exit->re-arm window has its POST dropped (dead socket),
+// but fanout already wrote it to the inbox, so re-arming before draining lets the same turn's
+// drain catch it. Worst case is one extra wake, never a missed event. Pull-on-turn
+// (`cli.js inbox`) stays the durable source of truth; this push path is the optional
+// event-driven upgrade that removes the idle wait. (See docs/agent-guide.md "Event-driven wake".)
 //
 // CAVEATS
 // -------
