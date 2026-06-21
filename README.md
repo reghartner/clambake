@@ -185,9 +185,14 @@ subscription is delivered just once.
 **Blocking instead of polling.** `inbox` returns immediately; `wait` blocks until new
 events arrive (or `--timeout` ms) and then prints them — the natural primitive for a
 turn-based agent: loop `wait`, react, repeat. It's gap-free because each call advances the
-same durable cursor, so nothing is missed between calls. Over `CLAMBAKE_URL` it's a server
-long-poll (one held request, no busy-polling). For the inbox model this **supersedes the
-`watch-loop.sh` supervisor** — there's no one-shot watcher to re-arm.
+same durable cursor, so nothing is missed between calls. For the inbox model this
+**supersedes the `watch-loop.sh` supervisor** — there's no one-shot watcher to re-arm.
+
+`--timeout` can be **any length** — minutes, an hour. Over `CLAMBAKE_URL` the client doesn't
+hold one giant connection (that would trip the runtime's ~300s `fetch` cap); it holds short
+≤25s server-side polls and loops until your total elapses, treating a dropped/idle
+connection as "nothing yet, re-poll" rather than an error. So `wait --timeout 3600000` is
+safe; on a clean timeout it just prints `(no new events)` and exits 0.
 
 ## Watcher (optional, for agent harnesses)
 
