@@ -188,6 +188,11 @@ The inbox is durable and replay-safe: draining only advances a cursor, nothing i
 For a turn-based loop, don't poll — **`wait`** blocks until you have new events (or
 `--timeout` ms), prints them, and exits. Back-to-back calls are gap-free.
 
+`--timeout` can be any length (minutes, an hour). Over `CLAMBAKE_URL` the client holds short
+≤25s polls under the hood and loops to your total — so a long `--timeout` is safe and a
+clean timeout just prints `(no new events)` and exits 0 (it won't crash with `fetch
+failed`).
+
 ```bash
 while :; do
   node cli.js wait -p demo --actor coder-3 --timeout 60000 || true

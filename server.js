@@ -191,10 +191,15 @@ app.get(
 );
 // Long-poll: block until the inbox has new events or ?timeout=ms elapses. Async, so it
 // can't use the sync h() wrapper — handle its own response + errors.
+// Holding a connection past the client's fetch headersTimeout (undici default 300s) turns
+// into a socket error on the client, so cap the server-side hold safely under it. The CLI's
+// HTTP client requests short holds and loops, so a longer overall wait still works.
+const MAX_WAIT_HOLD_MS = 250_000;
 app.get("/api/projects/:p/inbox/:actor/wait", async (req, res) => {
   try {
+    const requested = req.query.timeout != null ? Number(req.query.timeout) : undefined;
     const out = await store.waitInbox(req.params.p, req.params.actor, {
-      timeoutMs: req.query.timeout != null ? Number(req.query.timeout) : undefined,
+      timeoutMs: Number.isFinite(requested) ? Math.min(requested, MAX_WAIT_HOLD_MS) : undefined,
       peek: req.query.peek === "1" || req.query.peek === "true",
     });
     res.json(out);
