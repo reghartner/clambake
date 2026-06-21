@@ -215,6 +215,33 @@ sitting in the inbox to pull. Pattern: webhook **nudges** you, then you `inbox` 
 > webhook nudge) is simpler and has nothing to babysit. `watch.js` / `watch-loop.sh` are
 > legacy whole-board tools; the inbox system above replaces them for per-agent use.
 
+### Event-driven wake (waking an idle agent session)
+
+If you want the `--notify` push to actually *wake* an idle agent (not just nudge a process
+that's already running), there's exactly one pattern that works. A Claude-style harness
+re-invokes a session only when a background task **that session launched** *completes* — so a
+long-lived, centralized log-writing receiver (a shared `:9000` sink that stays up) can
+**never** wake a session. It never completes, so it never re-enters the session; a logfile is
+not a wake.
+
+The canonical wake is a **per-session one-shot listener**: it replies 204 and **exits on the
+first POST**, and *that exit* is what re-invokes the session. The repo ships one at
+[`scripts/wake-once.js`](scripts/wake-once.js):
+
+```bash
+ME=coder-2 ; PORT=9876                                   # a port UNIQUE to this actor
+node scripts/wake-once.js $PORT &                         # background your one-shot
+node cli.js watch -p demo --actor $ME --epic Auth --notify http://localhost:$PORT/wake
+# on the first matching event the one-shot 204s and exits -> the session wakes:
+node cli.js inbox -p demo --actor $ME                     # drain the real payload
+node scripts/wake-once.js $PORT &                         # relaunch for the next event
+```
+
+Cycle: **arm one-shot → register `--notify` → wake on its exit → drain `inbox` → relaunch.**
+The same caveats as the `--notify` note above apply (resolved on the **server** host, so the
+port must be reachable from that box and **unique per actor**). Pulling `inbox` on each turn
+remains the simplest model; this push path is the optional event-driven upgrade.
+
 ## Watcher (optional, for agent harnesses)
 
 `watch.js` lets an agent/host harness block until the board changes, then re-run. It
