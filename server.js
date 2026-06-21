@@ -189,6 +189,21 @@ app.get(
     })
   )
 );
+// Long-poll: block until the inbox has new events or ?timeout=ms elapses. Async, so it
+// can't use the sync h() wrapper — handle its own response + errors.
+app.get("/api/projects/:p/inbox/:actor/wait", async (req, res) => {
+  try {
+    const out = await store.waitInbox(req.params.p, req.params.actor, {
+      timeoutMs: req.query.timeout != null ? Number(req.query.timeout) : undefined,
+      peek: req.query.peek === "1" || req.query.peek === "true",
+    });
+    res.json(out);
+  } catch (err) {
+    const status = err instanceof HttpError ? err.status : 500;
+    if (status === 500) console.error(err);
+    res.status(status).json({ error: err.message });
+  }
+});
 
 // ---- static UI ----
 app.use(express.static(path.join(__dirname, "public")));

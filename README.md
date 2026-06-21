@@ -158,6 +158,7 @@ node cli.js watch    -p demo --actor pm --mentions          # @pm in a note land
 
 node cli.js inbox    -p demo --actor coder-2                # drain new events (advances cursor)
 node cli.js inbox    -p demo --actor coder-2 --peek         # look without draining
+node cli.js wait     -p demo --actor coder-2                # BLOCK until new events, then print + exit
 node cli.js watching -p demo --actor coder-2                # show my subscription
 node cli.js unwatch  -p demo --actor coder-2 --epic Auth    # drop one filter
 node cli.js unwatch  -p demo --actor coder-2 --all          # stop watching entirely
@@ -180,6 +181,13 @@ node cli.js inbox -p demo --actor pm        # → DEMO-3: note — @pm need a ca
 
 An author is never pinged by their own `@self`, and a mention that also matches a
 subscription is delivered just once.
+
+**Blocking instead of polling.** `inbox` returns immediately; `wait` blocks until new
+events arrive (or `--timeout` ms) and then prints them — the natural primitive for a
+turn-based agent: loop `wait`, react, repeat. It's gap-free because each call advances the
+same durable cursor, so nothing is missed between calls. Over `CLAMBAKE_URL` it's a server
+long-poll (one held request, no busy-polling). For the inbox model this **supersedes the
+`watch-loop.sh` supervisor** — there's no one-shot watcher to re-arm.
 
 ## Watcher (optional, for agent harnesses)
 

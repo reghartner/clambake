@@ -1,6 +1,11 @@
 #!/bin/sh
 # watch-loop.sh — auto-re-arming supervisor for watch.js.
 #
+# NOTE: for per-agent notifications (a specific actor's tickets/epics/mentions), prefer
+# `node cli.js wait --actor <id>` — it blocks until that actor's inbox has new events and
+# is gap-free across calls via a durable cursor, so there's no one-shot watcher to
+# supervise. This loop remains useful only for whole-board watch.js tailing.
+#
 # watch.js is a one-shot edge detector: it exits the moment the board changes (so a
 # turn-based agent can react), which means SOMETHING has to re-arm it after every fire.
 # When many independent sessions each watch the board, a single missed re-arm silently

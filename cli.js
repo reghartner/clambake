@@ -26,6 +26,7 @@
 //   node cli.js unwatch  -p <proj> --actor <id> [--ticket ID]... [--epic E]... | [--all]
 //   node cli.js watching -p <proj> --actor <id>           show this actor's subscription
 //   node cli.js inbox    -p <proj> --actor <id> [--peek]  drain new events for this actor
+//   node cli.js wait     -p <proj> --actor <id> [--timeout ms]  block until new events, then print
 //   node cli.js projects
 //   node cli.js newproject <slug> [--name "..."] [--prefix MET] [--stale 5]
 //   node cli.js sprint new -p <proj> --id s1 --name "Sprint 1" [--start ...] [--end ...] [--goal ...]
@@ -90,6 +91,7 @@ function parse(args, { multi = [] } = {}) {
     mentions: { type: "boolean" },
     all: { type: "boolean" },
     peek: { type: "boolean" },
+    timeout: { type: "string" },
   };
   let parsed;
   try {
@@ -522,6 +524,22 @@ try {
       const { events } = await store.readInbox(proj(values), actor, { peek: !!values.peek });
       if (!events.length) {
         console.log("(inbox empty)");
+        break;
+      }
+      for (const e of events) console.log(fmtEvent(e));
+      break;
+    }
+
+    case "wait": {
+      // Block until this actor has new inbox events (or timeout), then print + exit.
+      const { values } = parse(argv.slice(1));
+      const actor = values.actor || die("wait needs --actor <id>");
+      const { events } = await store.waitInbox(proj(values), actor, {
+        timeoutMs: values.timeout != null ? Number(values.timeout) : undefined,
+        peek: !!values.peek,
+      });
+      if (!events.length) {
+        console.log("(no new events)");
         break;
       }
       for (const e of events) console.log(fmtEvent(e));
