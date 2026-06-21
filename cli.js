@@ -14,16 +14,22 @@
 //                      [--link url]... [--label x]... [--assignee a] [--due 2026-07-01]
 //   node cli.js ac     -p <proj> <id> add "criterion"     | check <index> | uncheck <index>
 //   node cli.js note   -p <proj> <id> "free text note"
-//   node cli.js attach -p <proj> <id> <image-path> [--name name] | rm <filename>
-//   node cli.js ls     -p <proj> [--status active] [--sprint s1] [--behind]
+//                      note -p <proj> <id> -- literal --text   (everything after -- is verbatim text)
+//                      note -p <proj> <id> --stdin             (read the note body from stdin; wins over positional/-- if both)
+//   node cli.js attach -p <proj> <id> <image-path> [--name name] | <https-url> | --link <url> | rm <filename>
+//                      (a positional http(s) URL, or --link <url>, records into the ticket's links[] instead of reading a file)
+//   node cli.js ls     -p <proj> [--status <col>]... [--active] [--sprint s1] [--behind]
+//                      (--status repeats to keep several columns; --active = every non-done column; --status wins if both given)
 //   node cli.js show   -p <proj> <id>
 //   node cli.js behind -p <proj>
 //   node cli.js rm     -p <proj> <id>
 //   node cli.js archive   -p <proj> [<id>] [--days N] [--dry-run]   sweep, or archive one
 //   node cli.js archived  -p <proj>                                 list archived tickets
 //   node cli.js unarchive -p <proj> <id>                            restore to the board
-//   node cli.js watch    -p <proj> --actor <id> [--ticket ID]... [--epic E]... [--column C]... [--mentions] [--notify <url>]
+//   node cli.js watch    -p <proj> --actor <id> [--replace] [--ticket ID]... [--epic E]... [--column C]... [--mentions] [--notify <url>]
+//                      (DEFAULT unions onto the existing set; --replace SETS the exact filter set in one call — omitted filters cleared, notify preserved unless --notify given)
 //   node cli.js unwatch  -p <proj> --actor <id> [--ticket ID]... [--epic E]... | [--all]
+//                      (removes ONLY the named filter(s); preserves --notify and every other unrelated field)
 //   node cli.js watching -p <proj> --actor <id>           show this actor's subscription
 //   node cli.js inbox    -p <proj> --actor <id> [--peek]  drain new events for this actor
 //   node cli.js wait     -p <proj> --actor <id> [--timeout ms]  block until new events, then print
@@ -64,7 +70,9 @@ function parse(args, { multi = [] } = {}) {
     p: { type: "string", short: "p" },
     project: { type: "string" },
     title: { type: "string", short: "t" },
-    status: { type: "string", short: "s" },
+    // repeatable so `ls --status active --status blocked` filters on several columns;
+    // new/move/update want a single column, so they take the last via scalar().
+    status: { type: "string", short: "s", multiple: true },
     sprint: { type: "string", short: "S" },
     // repeatable so `watch --epic A --epic B` registers both; new/update take the last.
     epic: { type: "string", short: "e", multiple: true },
@@ -94,6 +102,12 @@ function parse(args, { multi = [] } = {}) {
     peek: { type: "boolean" },
     timeout: { type: "string" },
     notify: { type: "string" },
+    // watch: replace the whole filter set instead of unioning onto it (default).
+    replace: { type: "boolean" },
+    // ls: show only non-done columns (a shortcut; --status overrides it if both given).
+    active: { type: "boolean" },
+    // note: read the note body from stdin instead of positional text.
+    stdin: { type: "boolean" },
   };
   let parsed;
   try {
@@ -262,13 +276,15 @@ try {
   switch (cmd) {
     case "new": {
       const { values } = parse(argv.slice(1));
+      // --status is repeatable (for ls filters); a new ticket has one column — take the last.
+      const status = scalar(values.status);
       checkPriority(values.priority);
-      await checkStatus(proj(values), values.status);
+      await checkStatus(proj(values), status);
       const t = await store.createTicket(
         proj(values),
         {
           title: values.title,
-          status: values.status,
+          status,
           sprint: values.sprint,
           epic: scalar(values.epic),
           priority: values.priority,
@@ -302,11 +318,13 @@ try {
       const { values, positionals } = parse(argv.slice(1));
       const id = positionals[0];
       if (!id) die("usage: update -p <proj> <id> [flags]");
+      // --status is repeatable (for ls filters); an update sets one column — take the last.
+      const status = scalar(values.status);
       checkPriority(values.priority);
-      await checkStatus(proj(values), values.status);
+      await checkStatus(proj(values), status);
       const patch = {};
       if (values.title != null) patch.title = values.title;
-      if (values.status != null) patch.status = values.status;
+      if (status != null) patch.status = status;
       if (values.sprint != null) patch.sprint = values.sprint === "none" ? null : values.sprint;
       // --epic is repeatable (array); a ticket has one epic, so take the last given.
       if (values.epic != null) {
@@ -353,8 +371,13 @@ try {
     case "note": {
       const { values, positionals } = parse(argv.slice(1));
       const id = positionals[0];
-      const text = positionals.slice(1).join(" ");
-      if (!id || !text) die('usage: note -p <proj> <id> "text"');
+      // Note text comes from one of two places. --stdin reads the whole body from
+      // stdin (wins if both given). Otherwise it's the positional text after the id —
+      // and an end-of-flags `--` lets that text contain --dash-prefixed tokens
+      // verbatim (everything after `--` is positional, never parsed as a flag), so
+      // `note P ID -- text with --weird --tokens` is recorded literally.
+      const text = values.stdin ? readFileSync(0, "utf8").trim() : positionals.slice(1).join(" ");
+      if (!id || !text) die('usage: note -p <proj> <id> "text"  |  note -p <proj> <id> -- literal --text  |  note -p <proj> <id> --stdin');
       const before = await store.getTicket(proj(values), id);
       await store.appendNote(proj(values), id, text, before.updatedAt, values.actor || "ui");
       console.log(`note added to ${id}`);
@@ -364,14 +387,29 @@ try {
     case "attach": {
       const { values, positionals } = parse(argv.slice(1));
       const [id, sub, arg] = positionals;
-      if (!id) die("usage: attach -p <proj> <id> <image-path> [--name name]  |  attach -p <proj> <id> rm <filename>");
+      if (!id) die("usage: attach -p <proj> <id> <image-path> [--name name]  |  attach -p <proj> <id> --link <url>  |  attach -p <proj> <id> rm <filename>");
       if (sub === "rm") {
         if (!arg) die("attach rm needs a filename");
         await store.removeAttachment(proj(values), id, arg, values.actor || "ui");
         console.log(`removed ${arg} from ${id}`);
         break;
       }
-      if (!sub) die("attach needs an image path");
+      // Attaching a URL records it in the ticket's links[] rather than reading a file:
+      // either an explicit --link <url>, or a positional that's already an http(s) URL
+      // (so `attach P ID https://… ` no longer ENOENTs trying to read it as a path).
+      const isUrl = (s) => typeof s === "string" && /^https?:\/\//i.test(s);
+      const linkUrls = asList(values.link).filter(isUrl);
+      if (isUrl(sub)) linkUrls.push(sub);
+      if (linkUrls.length) {
+        // Read-modify-write: append to the existing links, de-duped, with the
+        // optimistic-concurrency stamp so a concurrent edit is rejected, not clobbered.
+        const before = await store.getTicket(proj(values), id);
+        const links = [...new Set([...(before.links || []), ...linkUrls])];
+        await store.updateTicket(proj(values), id, { links, expectedUpdatedAt: before.updatedAt }, values.actor || "ui");
+        console.log(`linked ${linkUrls.join(", ")} to ${id}`);
+        break;
+      }
+      if (!sub) die("attach needs an image path (or --link <url>)");
       let buffer;
       try {
         buffer = readFileSync(sub);
@@ -426,7 +464,12 @@ try {
       const { values } = parse(argv.slice(1));
       const { tickets } = await store.getBoard(proj(values));
       let list = tickets;
-      if (values.status) list = list.filter((t) => t.status === values.status);
+      // --status is repeatable (and comma-accepting) — keep tickets in ANY named column.
+      // --active is a shortcut for "every non-done column". If both are given, the
+      // explicit --status set wins (it's the more specific request).
+      const statuses = asList(values.status);
+      if (statuses.length) list = list.filter((t) => statuses.includes(t.status));
+      else if (values.active) list = list.filter((t) => t.status !== "done");
       if (values.sprint) list = list.filter((t) => t.sprint === values.sprint);
       if (values.behind) list = list.filter((t) => t.behind);
       if (!list.length) {
@@ -499,10 +542,14 @@ try {
         epics: asList(values.epic),
         columns: asList(values.column),
         mentions: !!values.mentions,
+        // Default is additive (union onto the existing set, for back-compat). --replace
+        // SETS the exact filter set in this one call; omitted filters are cleared.
+        replace: !!values.replace,
       };
       if (values.notify != null) filters.notify = values.notify; // webhook push URL (or "none" to clear)
       const hasFilter = filters.tickets.length || filters.epics.length || filters.columns.length || filters.mentions;
-      if (!hasFilter && values.notify == null) {
+      // --replace with no filters is a deliberate "set to empty" (keep notify), so allow it.
+      if (!hasFilter && values.notify == null && !values.replace) {
         die("watch needs at least one of --ticket --epic --column --mentions (or --notify <url>)");
       }
       const sub = await store.setWatch(proj(values), actor, filters);

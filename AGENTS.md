@@ -45,6 +45,8 @@ node cli.js new -p demo --title "Results screen" --status planned \
 
 node cli.js move   -p demo DEMO-1 blocked        # columns: backlog planned active blocked testingNeeded needsRework done
 node cli.js note   -p demo DEMO-1 "PR #12 open, awaiting review"
+node cli.js note   -p demo DEMO-1 -- text with --flags --kept verbatim   # -- ends flag parsing; text recorded literally
+node cli.js note   -p demo DEMO-1 --stdin < body.md                       # read the note body from stdin (wins over -- if both)
 node cli.js update -p demo DEMO-1 --test-steps @steps.md   # load markdown from a file (recommended)
 node cli.js update -p demo DEMO-1 -T -                     # …or pipe it on stdin; --test-steps none to clear
 node cli.js ac     -p demo DEMO-1 add "handles empty score"
@@ -53,7 +55,9 @@ node cli.js update -p demo DEMO-1 --priority high --sprint sprint-1 --due 2026-0
 node cli.js update -p demo DEMO-1 --epic results-screen     # loose group; --epic none to clear
 
 node cli.js ls     -p demo                      # read the board back as text
-node cli.js ls     -p demo --status active      # filter
+node cli.js ls     -p demo --status active      # filter by column (repeatable: --status active --status blocked)
+node cli.js ls     -p demo --active             # shortcut: every non-done column (--status wins if both given)
+node cli.js attach -p demo DEMO-1 --link <pr-url>   # record a URL in links[] (or pass an http(s) URL positionally)
 node cli.js behind -p demo                      # what fell behind — check this often
 node cli.js show   -p demo DEMO-1               # full ticket JSON (incl. behind flag)
 node cli.js projects                            # list projects
@@ -64,7 +68,9 @@ node cli.js newproject <slug> --name "…" --prefix ABC   # new project
 node cli.js watch    -p demo --actor me --epic Auth --epic Billing --column done --ticket DEMO-3   # register once; --epic is repeatable (also --epic Auth,Billing)
 node cli.js inbox    -p demo --actor me              # drain new events since last read (--peek to not drain)
 node cli.js note     -p demo DEMO-1 "@pm need a decision" --actor me  # tag someone — hits @pm's inbox, no column move
+node cli.js watch    -p demo --actor me --replace --epic Billing   # --replace SETS the exact set (default is additive/union)
 node cli.js watching -p demo --actor me              # show your subscription
+node cli.js unwatch  -p demo --actor me --epic Auth  # drop ONE filter; keeps the rest AND your --notify webhook
 node cli.js unwatch  -p demo --actor me --all        # stop watching
 node cli.js watch    -p demo --actor me --epic Auth --notify http://host:9000/wake  # optional: webhook push instead of pulling
 # event-driven WAKE of an idle session: background a per-session one-shot that 204s + EXITS on
