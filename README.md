@@ -254,8 +254,9 @@ AGENTS.md            the contract an agent follows to drive the board
 
 ## For agents
 
-See **[AGENTS.md](./AGENTS.md)** — when to open/move tickets and the full CLI cheat sheet.
-Quick taste (run from the repo root):
+See **[AGENTS.md](./AGENTS.md)** — when to open/move tickets and the full CLI cheat sheet —
+and **[docs/agent-guide.md](./docs/agent-guide.md)** for the longer walkthrough (identity,
+notifications, the agent loop, troubleshooting). Quick taste (run from the repo root):
 
 ```bash
 node cli.js new  -p demo --title "Set up the board" --status planned --ac "columns defined"
