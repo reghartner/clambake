@@ -169,6 +169,18 @@ work locally or over `CLAMBAKE_URL`. Matching is by **ticket id**, **epic**, the
 **destination column** of a move (or a new ticket's column), or an **@mention** of the
 actor. This is the pull model; `watch.js` below is the blocking-until-change companion.
 
+**Tagging with @mentions.** Put `@actor` in a note (or a ticket body) and that actor gets
+it in their inbox — **even if they never registered** — so you can tag the PM for a
+decision without moving the ticket or owning a column:
+
+```bash
+node cli.js note -p demo DEMO-3 "@pm need a call on the schema change" --actor coder-1
+node cli.js inbox -p demo --actor pm        # → DEMO-3: note — @pm need a call … (by coder-1)
+```
+
+An author is never pinged by their own `@self`, and a mention that also matches a
+subscription is delivered just once.
+
 ## Watcher (optional, for agent harnesses)
 
 `watch.js` lets an agent/host harness block until the board changes, then re-run. It
