@@ -60,7 +60,10 @@ node cli.js attach -p demo DEMO-1 ./screenshot.png    # uploads the local image
 
 `attach` reads an image from the calling machine and uploads the bytes, so it
 works the same whether the board is local or remote. Remove one with
-`attach -p demo DEMO-1 rm <filename>`.
+`attach -p demo DEMO-1 rm <filename>`. To attach a **URL** (a PR, doc, CI run)
+instead of an image, pass `--link <url>` — or just give an `http(s)` URL as the
+positional; it's recorded in the ticket's `links[]` rather than read as a file:
+`node cli.js attach -p demo DEMO-1 --link https://github.com/o/r/pull/9`.
 
 Same commands, same flags as local mode. Like the web UI, this has **no auth** —
 anyone who can reach the port has full read/write, so keep it on a trusted network.
@@ -71,6 +74,23 @@ A misspelled or value-less flag, or an invalid `--priority`/status, now fails wi
 explanatory message (and a did-you-mean) instead of being silently ignored. Flags that
 take markdown accept `@file` or `-` (stdin) so multi-line test steps don't need escaping:
 `node cli.js update -p demo DEMO-1 -T @steps.md`.
+
+A `note`'s text is positional, so dash-prefixed words in it would otherwise be parsed as
+flags. Put an end-of-flags `--` before the text to record it **verbatim**, or read the
+whole body from stdin with `--stdin` (which wins if both are given):
+
+```bash
+node cli.js note -p demo DEMO-1 -- text with --weird --tokens and a -dash   # recorded literally
+echo "multi-line body" | node cli.js note -p demo DEMO-1 --stdin
+```
+
+`ls` filters by column: `--status <col>` is **repeatable** (keep several columns), and
+`--active` is a shortcut for every non-`done` column. If both are given, `--status` wins:
+
+```bash
+node cli.js ls -p demo --status active --status blocked   # just those two columns
+node cli.js ls -p demo --active                           # everything except done
+```
 
 ## How it works
 
@@ -162,12 +182,22 @@ node cli.js inbox    -p demo --actor coder-2                # drain (advances yo
 node cli.js inbox    -p demo --actor coder-2 --peek         # look without draining
 
 node cli.js watching -p demo --actor coder-2                # show my subscription
-node cli.js unwatch  -p demo --actor coder-2 --epic Auth    # drop one filter
+node cli.js unwatch  -p demo --actor coder-2 --epic Auth    # drop ONE filter (keeps the rest + --notify)
 node cli.js unwatch  -p demo --actor coder-2 --all          # stop watching entirely
 ```
 
 `--epic` is **repeatable** — `--epic Auth --epic Billing` watches both (the comma form
 `--epic Auth,Billing` also works). The same goes for `--ticket` and `--column`.
+
+**`watch` is additive by default** — re-running it **unions** the new filters onto whatever
+you already watch (so `watch --epic B` while watching `A` yields `[A, B]`). To instead SET
+the exact filter set in one call, pass **`--replace`**: `watch --replace --epic B` makes your
+subscription exactly `[B]`, clearing any omitted filters. `--replace` leaves your `--notify`
+webhook alone unless you also pass `--notify`.
+
+**`unwatch` mutates ONLY the named filter(s)** and preserves everything else — notably your
+`--notify` webhook survives when you drop an epic/ticket/column. Use `--all` to remove the
+whole subscription.
 
 `inbox` has **no timeout and nothing to keep alive** — call it whenever your agent runs
 (e.g. at the top of each turn) and you get everything accumulated since last time. The

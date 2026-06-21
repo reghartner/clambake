@@ -101,7 +101,8 @@ node cli.js new -p demo -t "Results screen" -s planned \
   --ac "shows score" --ac "replay button" --label ui --link <pr-url>
 
 node cli.js ls     -p demo                 # the board as text
-node cli.js ls     -p demo --status active # filter by column
+node cli.js ls     -p demo --status active # filter by column (repeatable: --status active --status blocked)
+node cli.js ls     -p demo --active        # shortcut: every non-done column (--status wins if both given)
 node cli.js ls     -p demo --behind        # only tickets that fell behind
 node cli.js show   -p demo DEMO-1          # full ticket JSON
 node cli.js behind -p demo                 # what fell behind — check this often
@@ -116,7 +117,12 @@ node cli.js update -p demo DEMO-1 --priority high -S sprint-1 --due 2026-07-01 -
 node cli.js update -p demo DEMO-1 -e results          # set epic ( --epic none to clear )
 node cli.js update -p demo DEMO-1 -T @steps.md        # replace test steps from a file
 node cli.js note   -p demo DEMO-1 "PR #12 open, awaiting review" -a coder-3
+node cli.js note   -p demo DEMO-1 -- text with --flags --kept literally   # -- ends flag parsing; text verbatim
+node cli.js note   -p demo DEMO-1 --stdin < body.md  # read the whole note body from stdin (wins over -- if both)
 ```
+
+A `note`'s text is positional, so `--dash` words in it would be parsed as flags and corrupt
+the note. Use `--` to record everything after it verbatim, or `--stdin` to pipe the body in.
 
 ### Acceptance criteria
 
@@ -129,8 +135,12 @@ node cli.js ac -p demo DEMO-1 check 0     # tick AC index 0 (uncheck to undo)
 
 ```bash
 node cli.js attach -p demo DEMO-1 ./screenshot.png          # uploads the bytes (works remote too)
+node cli.js attach -p demo DEMO-1 --link <pr-url>           # record a URL in links[] (or pass an http(s) URL positionally)
 node cli.js attach -p demo DEMO-1 rm screenshot.png         # remove one
 ```
+
+`attach` with an `http(s)` URL (via `--link <url>`, or a positional URL) records it in the
+ticket's `links[]` instead of trying to read a local file — so linking a PR no longer ENOENTs.
 
 ### Archive (aging out done tickets)
 
@@ -170,13 +180,20 @@ node cli.js watch -p demo --actor coder-3 --epic A --epic B # repeatable: watch 
 `--epic` is **repeatable** (`--epic A --epic B`), and the comma form `--epic A,B` still
 works too — same for `--ticket` and `--column`.
 
-`watch` unions with whatever you already watch. Inspect or remove:
+**`watch` is additive by default** — it **unions** new filters onto whatever you already
+watch (`watch --epic B` while watching `A` → `[A, B]`). Pass **`--replace`** to SET the exact
+set in one call (`watch --replace --epic B` → exactly `[B]`, clearing omitted filters);
+`--replace` leaves your `--notify` webhook alone unless you also pass `--notify`. Inspect or remove:
 
 ```bash
 node cli.js watching -p demo --actor coder-3
-node cli.js unwatch  -p demo --actor coder-3 --epic results   # drop one filter
+node cli.js watch    -p demo --actor coder-3 --replace --epic results  # SET the exact filter set
+node cli.js unwatch  -p demo --actor coder-3 --epic results   # drop ONE filter (keeps the rest + your --notify)
 node cli.js unwatch  -p demo --actor coder-3 --all            # stop entirely
 ```
+
+`unwatch` mutates **only** the named filter(s) — your `--notify` webhook and any other
+filters survive when you drop an epic/ticket/column.
 
 ### Read your inbox
 

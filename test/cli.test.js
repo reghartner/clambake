@@ -127,6 +127,24 @@ test("note writes with expectedUpdatedAt", async () => {
   }
 });
 
+// attach --link must work over HTTP too: read the board for links+updatedAt, then
+// PATCH the merged links[] with the optimistic-concurrency stamp — never an upload.
+test("attach --link PATCHes links[] over the HTTP backend", async () => {
+  const { server, calls, port } = await startStub();
+  try {
+    const r = await runCli(port, ["attach", "-p", "demo", "T-1", "--link", "https://example.com/pr/9"]);
+    assert.equal(r.status, 0, r.stderr);
+    const patch = calls.find((c) => c.method === "PATCH");
+    assert.ok(patch, "should PATCH the ticket, not upload");
+    assert.equal(patch.body.expectedUpdatedAt, STAMP);
+    assert.deepEqual(patch.body.links, ["https://example.com/pr/9"]);
+    // and it must NOT hit the attachments upload route
+    assert.ok(!calls.some((c) => /\/attachments/.test(c.url)), "URL attach must not upload bytes");
+  } finally {
+    server.close();
+  }
+});
+
 // A conflicting write (server 409) must fail the command, not pass silently, so a
 // scripted caller can detect it and re-run.
 test("a 409 conflict makes the command exit non-zero", async () => {
