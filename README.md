@@ -166,6 +166,9 @@ node cli.js unwatch  -p demo --actor coder-2 --epic Auth    # drop one filter
 node cli.js unwatch  -p demo --actor coder-2 --all          # stop watching entirely
 ```
 
+`--epic` is **repeatable** — `--epic Auth --epic Billing` watches both (the comma form
+`--epic Auth,Billing` also works). The same goes for `--ticket` and `--column`.
+
 `inbox` has **no timeout and nothing to keep alive** — call it whenever your agent runs
 (e.g. at the top of each turn) and you get everything accumulated since last time. The
 inbox is cursor-tracked (durable, replay-safe — draining advances a cursor, nothing is
@@ -199,6 +202,13 @@ node cli.js watch -p demo --actor coder-2 --notify none      # turn the webhook 
 The POST body is `{ project, actor, event }`. Delivery is **best-effort** — the **inbox
 remains the source of truth**, so a missed push (listener down, network blip) is still
 sitting in the inbox to pull. Pattern: webhook **nudges** you, then you `inbox` to drain.
+
+> **The `--notify` URL is resolved by the *server* host, not your machine's localhost.**
+> The server is what POSTs, so the host:port must be reachable *from the server*, and
+> `localhost`/`127.0.0.1` means the server's own loopback. If several actors all register
+> `http://localhost:9000/...`, their pushes collide into one receiver — use a **unique,
+> server-reachable host:port per actor**, and have your receiver **ignore any POST whose
+> `payload.actor` isn't you** (a cheap guard against cross-talk).
 
 > Blocking option (`wait`): there's also `node cli.js wait --actor <id>` that blocks until
 > events arrive. It's optional — for most turn-based agents `inbox` on your turn (or the

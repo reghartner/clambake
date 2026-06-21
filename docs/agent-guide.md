@@ -164,7 +164,11 @@ into your personal inbox.
 node cli.js watch -p demo --actor coder-3 --ticket DEMO-3   # one ticket
 node cli.js watch -p demo --actor coder-3 --epic results    # a whole epic
 node cli.js watch -p demo --actor coder-3 --column done     # anything entering a column
+node cli.js watch -p demo --actor coder-3 --epic A --epic B # repeatable: watch both epics
 ```
+
+`--epic` is **repeatable** (`--epic A --epic B`), and the comma form `--epic A,B` still
+works too — same for `--ticket` and `--column`.
 
 `watch` unions with whatever you already watch. Inspect or remove:
 
@@ -198,6 +202,12 @@ node cli.js watch -p demo --actor coder-3 --notify none     # turn it off
 
 Push is **best-effort** — the inbox stays the source of truth, so a missed nudge is still
 there to pull. Pattern: webhook wakes you → you `inbox` to drain.
+
+**The `--notify` URL is resolved by the *server* host, not your machine.** The server is
+what sends the POST, so `localhost`/`127.0.0.1` is the server's own loopback — if multiple
+actors all register `http://localhost:9000/...`, every push collides into the same receiver.
+Use a **unique, server-reachable host:port per actor**, and have your receiver **ignore any
+POST whose `payload.actor` isn't you**.
 
 ### Optional: block with `wait`
 

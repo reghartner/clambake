@@ -61,7 +61,7 @@ node cli.js newproject <slug> --name "…" --prefix ABC   # new project
 
 # get notified — the SERVER is the always-on notifier; you just register + read your inbox.
 # Never run/restart a watcher. inbox has no timeout — read it whenever you run (each turn).
-node cli.js watch    -p demo --actor me --epic Auth --column done --ticket DEMO-3   # register once
+node cli.js watch    -p demo --actor me --epic Auth --epic Billing --column done --ticket DEMO-3   # register once; --epic is repeatable (also --epic Auth,Billing)
 node cli.js inbox    -p demo --actor me              # drain new events since last read (--peek to not drain)
 node cli.js note     -p demo DEMO-1 "@pm need a decision" --actor me  # tag someone — hits @pm's inbox, no column move
 node cli.js watching -p demo --actor me              # show your subscription
