@@ -4,6 +4,10 @@ Clambake is a lite-JIRA board so a human can see your active/planned/done/testin
 and so **you don't lose parked work, forget where details landed, or re-dig whether tests passed.**
 Treat it as your durable, shared scratchpad for project state.
 
+> New here? **[docs/agent-guide.md](./docs/agent-guide.md)** is the full walkthrough
+> (identity, notifications, the recommended agent loop, troubleshooting). This file is the
+> quick contract + cheat sheet.
+
 **Source of truth = markdown files** under `data/projects/<project>/tickets/<ID>.md`.
 You can change state two ways:
 
