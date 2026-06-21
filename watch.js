@@ -1,24 +1,24 @@
 #!/usr/bin/env node
-// Status-aware, actor-filtered, gap-safe board watcher.
+// Actor-filtered, gap-safe board watcher — fires on ANY change.
 //
-// Blocks on fs.watch of a project's ticket files and exits when a ticket's STATUS
-// changes (a column move) or a ticket is added/removed — so a host harness/agent
-// can re-run on meaningful board changes (not every keystroke-level write). On exit
-// it prints the changes; a heartbeat timeout exits cleanly if nothing happens.
+// Tails the project's append-only event log (data/projects/<project>/events.ndjson,
+// written by the store on every mutation) and exits the moment a relevant event
+// lands — a move, a note, an edit, an archive, anything — so a host harness/agent
+// can re-run on meaningful board changes. (Earlier versions diffed ticket *status*
+// off the files and so missed notes/edits; tailing the event log catches them all.)
 //
 //   node watch.js <project> [--ignore-actor <id>] [--heartbeat-ms <n>] [--poll-ms <n>]
 //
-// --ignore-actor <id>  Skip changes whose frontmatter lastActor == <id> (e.g. the
-//                      agent running this watcher, so it isn't woken by its own moves).
-// --heartbeat-ms <n>   Exit after n ms with no change (default 1,800,000 = 30 min).
+// --ignore-actor <id>  Skip events whose actor == <id> (e.g. the agent running this
+//                      watcher, so it isn't woken by its own writes).
+// --heartbeat-ms <n>   Exit after n ms with no event (default 1,800,000 = 30 min).
 // --poll-ms <n>        Backstop poll interval (default 5,000). fs.watch can miss
-//                      atomic-rename writes on macOS, so re-check every n ms too;
-//                      set 0 to disable the poll and rely on fs.watch alone.
+//                      appends on macOS, so re-read every n ms too; 0 disables it.
 //
-// GAP-SAFE: persists its last-seen snapshot to <project>/.watch_state.json and uses it
-// as the baseline on start, then runs one immediate check — so a change that lands
-// during the re-arm gap (after a fire, before the next arm) is caught on the next arm
-// instead of being silently absorbed into a fresh baseline.
+// GAP-SAFE: persists its byte OFFSET into the log to <project>/.watch_state.json and
+// resumes from it on start, then checks immediately — so an event that lands during
+// the re-arm gap (after a fire, before the next arm) is caught on the next arm. A
+// fresh watcher (no saved offset) starts at end-of-log, ignoring history.
 //
 // LIVENESS: writes <project>/.watch_live.json on arm and every minute thereafter
 // (pid + armedAt + lastCheckAt, all UTC). A dead watcher and a quiet board look
@@ -32,6 +32,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { readEvents, eventOffset } from "./lib/events.js";
 
 // The harness/background wrapper can deliver SIGURG at turn boundaries (observed as a
 // spurious exit 144); it carries no urgent-data semantics for this workload, so absorb
@@ -63,35 +64,24 @@ if (!project) {
 const base = process.env.CLAMBAKE_DATA
   ? path.resolve(process.env.CLAMBAKE_DATA)
   : path.join(__dirname, "data", "projects");
-const dir = path.join(base, project, "tickets");
-const STATE = path.join(base, project, ".watch_state.json");
-const LIVE = path.join(base, project, ".watch_live.json");
+const projectDir = path.join(base, project);
+const STATE = path.join(projectDir, ".watch_state.json");
+const LIVE = path.join(projectDir, ".watch_live.json");
 
-if (!fs.existsSync(dir)) {
-  console.error(`no such project tickets dir: ${dir}`);
+if (!fs.existsSync(projectDir)) {
+  console.error(`no such project: ${projectDir}`);
   process.exit(1);
 }
 
-// Snapshot each ticket's status + lastActor from frontmatter.
-function snapshot() {
-  const out = {};
-  for (const f of fs.readdirSync(dir)) {
-    if (!f.endsWith(".md")) continue;
-    const txt = fs.readFileSync(path.join(dir, f), "utf8");
-    const s = txt.match(/^status:\s*(.+)$/m);
-    const a = txt.match(/^lastActor:\s*(.+)$/m);
-    out[f] = { status: s ? s[1].trim() : "?", actor: a ? a[1].trim() : "ui" };
-  }
-  return out;
-}
-const persist = (snap) => {
+const persist = (offset) => {
   try {
-    fs.writeFileSync(STATE, JSON.stringify(snap));
+    fs.writeFileSync(STATE, JSON.stringify({ offset }));
   } catch {}
 };
-const loadPrior = () => {
+const loadOffset = () => {
   try {
-    return JSON.parse(fs.readFileSync(STATE, "utf8"));
+    const v = JSON.parse(fs.readFileSync(STATE, "utf8")).offset;
+    return Number.isFinite(v) ? v : null;
   } catch {
     return null;
   }
@@ -108,49 +98,56 @@ const writeLive = () => {
   } catch {}
 };
 
-// Baseline = last-seen persisted snapshot (catches gap-moves), or fresh on first run.
-let baseSnap = loadPrior() || snapshot();
-persist(baseSnap);
+// One-line human summary of an event.
+function fmt(ev) {
+  const who = ev.actor ? ` (by ${ev.actor})` : "";
+  switch (ev.type) {
+    case "moved":
+      return `${ev.ticket}: ${ev.from} -> ${ev.to}${who}`;
+    case "created":
+      return `${ev.ticket}: created [${ev.status}] ${ev.title || ""}`.trimEnd() + who;
+    case "noted":
+      return `${ev.ticket}: note${ev.summary ? ` — ${ev.summary}` : ""}${who}`;
+    case "edited":
+      return `${ev.ticket}: edited ${(ev.fields || []).join(", ")}${who}`;
+    case "attached":
+      return `${ev.ticket}: attached ${ev.summary || ""}`.trimEnd() + who;
+    default:
+      return `${ev.ticket}: ${ev.type}${who}`;
+  }
+}
+
+// Resume from saved offset (gap-safe), or start at end-of-log on a fresh watcher.
+let offset = loadOffset();
+if (offset == null) offset = eventOffset(project);
+persist(offset);
 
 let fired = false;
 function check() {
   if (fired) return;
-  const now = snapshot();
   writeLive(); // stamp lastCheckAt so a stale marker reliably means "stopped checking"
-  const ids = new Set([...Object.keys(baseSnap), ...Object.keys(now)]);
-  const changes = [];
-  for (const id of ids) {
-    const b = baseSnap[id];
-    const n = now[id];
-    const bStatus = b ? b.status : "(new)";
-    const nStatus = n ? n.status : "(removed)";
-    if (bStatus === nStatus) continue;
-    const actor = n ? n.actor : b ? b.actor : "ui";
-    if (ignoreActor && actor === ignoreActor) {
-      baseSnap[id] = n || { status: "(removed)", actor }; // absorb my own change
-      continue;
-    }
-    changes.push(`${id}: ${bStatus} -> ${nStatus} (by ${actor})`);
-  }
-  persist(now);
-  if (changes.length) {
+  const { events, offset: next } = readEvents(project, offset);
+  offset = next;
+  persist(offset);
+  const relevant = events.filter((e) => !(ignoreActor && e.actor === ignoreActor));
+  if (relevant.length) {
     fired = true;
-    console.log("BOARD STATUS CHANGE:\n" + changes.join("\n"));
+    console.log("BOARD CHANGE:\n" + relevant.map(fmt).join("\n"));
     process.exit(0);
   }
 }
 
-fs.watch(dir, { persistent: true }, () => setTimeout(check, 400)); // debounce the burst
-// Backstop poll: fs.watch can miss atomic-rename writes (the store writes temp + rename),
-// so re-check on a low-frequency timer too. unref so it never holds the process open alone.
+fs.watch(projectDir, { persistent: true }, () => setTimeout(check, 400)); // debounce the burst
+// Backstop poll: fs.watch can miss appends to the log, so re-read on a low-frequency
+// timer too. unref so it never holds the process open alone.
 if (pollMs > 0) setInterval(check, pollMs).unref();
 // Keep the liveness marker fresh even on a totally quiet board (check() may not run for a while).
 setInterval(writeLive, 60_000).unref();
 setTimeout(() => {
   if (!fired) {
-    console.log(`board watch heartbeat (no status change in ${Math.round(heartbeatMs / 60000)}m)`);
+    console.log(`board watch heartbeat (no change in ${Math.round(heartbeatMs / 60000)}m)`);
     process.exit(0);
   }
 }, heartbeatMs);
-console.log(`board watch armed on ${dir}${ignoreActor ? ` (ignoring actor=${ignoreActor})` : ""}`);
-check(); // immediate catch-up for any change during the re-arm gap
+console.log(`board watch armed on ${projectDir}${ignoreActor ? ` (ignoring actor=${ignoreActor})` : ""}`);
+check(); // immediate catch-up for any event during the re-arm gap

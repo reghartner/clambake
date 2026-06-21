@@ -128,25 +128,41 @@ Two processes write the same files — your browser (→ server) and the agent (
 - **Exclusive create** (`O_EXCL`) — two simultaneous "new ticket" calls can't grab the same id;
   the loser retries with the next number.
 
+## Event log
+
+Every store mutation appends one structured line to `data/projects/<slug>/events.ndjson`
+(gitignored — a runtime stream, not source of truth). Because both write paths funnel
+through the store, this captures **every** change — local-CLI, browser, and remote-CLI
+alike — as typed events: `created`, `moved`, `noted`, `edited`, `attached`,
+`archived`, `unarchived`.
+
+```json
+{"ts":"2026-06-21T18:03:11.220Z","type":"moved","ticket":"DEMO-3","actor":"coder-1","from":"active","to":"done","epic":"Auth"}
+```
+
+Consumers (the watcher below) track a byte **offset** into the file as their cursor;
+reads only consume whole lines, so a concurrent append is never seen half-parsed.
+
 ## Watcher (optional, for agent harnesses)
 
-`watch.js` lets an agent/host harness block until the board meaningfully changes, then
-re-run. It exits when a ticket's **status** changes (a column move) or a ticket is
-added/removed — not on every minor edit.
+`watch.js` lets an agent/host harness block until the board changes, then re-run. It
+tails the event log and exits on the first event — a move, a note, an edit, **anything**
+(earlier versions diffed *status* and so missed notes/edits).
 
 ```bash
 node watch.js <project> [--ignore-actor <id>] [--heartbeat-ms <n>] [--poll-ms <n>]
 ```
 
-- `--ignore-actor <id>` — skip changes whose `lastActor` is `<id>`, so an agent isn't
-  woken by its own writes (pairs with the CLI `--actor` flag).
-- `--heartbeat-ms <n>` — exit after `n` ms with no change (default 30 min) so the watch
+- `--ignore-actor <id>` — skip events whose `actor` is `<id>`, so an agent isn't woken by
+  its own writes (pairs with the CLI `--actor` flag).
+- `--heartbeat-ms <n>` — exit after `n` ms with no event (default 30 min) so the watch
   can't silently die.
 - `--poll-ms <n>` — backstop poll interval (default 5s; `0` disables). `fs.watch` can miss
-  the store's atomic temp-file→`rename` writes on macOS, so the watcher also re-checks on
-  this timer; a missed filesystem event is still caught within `n` ms.
-- **Gap-safe:** it persists a snapshot (`<project>/.watch_state.json`, gitignored) and
-  uses it as the baseline on start, so a move that lands between watches is still caught.
+  appends, so the watcher also re-reads the log on this timer; a missed filesystem event
+  is still caught within `n` ms.
+- **Gap-safe:** it persists its log **offset** (`<project>/.watch_state.json`, gitignored)
+  and resumes from it on start, so an event that lands between watches is still caught. A
+  fresh watcher starts at end-of-log (ignores history).
 - **Liveness:** on arm and every minute it writes `<project>/.watch_live.json` (pid,
   `armedAt`, `lastCheckAt`, all gitignored). A dead watcher and a quiet board otherwise
   look identical — a stale `lastCheckAt` means the watcher died and should be re-armed.
@@ -175,16 +191,18 @@ liveness signal.
 ```
 server.js            HTTP API + serves the board
 cli.js               agent/CLI entry point (node cli.js …)
-watch.js             optional: fs.watch a project, exit on first change (for host harnesses)
+watch.js             optional: tail a project's event log, exit on first change (for host harnesses)
 watch-loop.sh        optional: supervisor that auto-re-arms watch.js after each fire
 lib/schema.js        defaults, id allocation, behind logic
-lib/store.js         file-backed read/write
+lib/store.js         file-backed read/write (emits events on every mutation)
+lib/events.js        append-only event log: emit + cursor-based read
 public/              the kanban UI (vanilla HTML/CSS/JS)
 data/projects/<slug>/
   project.json       { name, idPrefix, staleDays, archiveDoneAfterDays, columns }
   sprints/<id>.md
   tickets/<ID>.md
   archive/<ID>.md    done tickets aged out of the board (recoverable)
+  events.ndjson      append-only change stream (gitignored; what the watcher tails)
 AGENTS.md            the contract an agent follows to drive the board
 ```
 
