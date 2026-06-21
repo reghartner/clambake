@@ -66,7 +66,8 @@ function parse(args, { multi = [] } = {}) {
     title: { type: "string", short: "t" },
     status: { type: "string", short: "s" },
     sprint: { type: "string", short: "S" },
-    epic: { type: "string", short: "e" },
+    // repeatable so `watch --epic A --epic B` registers both; new/update take the last.
+    epic: { type: "string", short: "e", multiple: true },
     priority: { type: "string" },
     assignee: { type: "string", short: "A" },
     due: { type: "string", short: "d" },
@@ -156,6 +157,12 @@ function proj(values) {
   const p = values.p || values.project;
   if (!p) die("Missing -p <project>");
   return p;
+}
+
+// A flag may now be repeatable (parseArgs gives an array). Where a single value is wanted
+// (a ticket has one epic), take the last one given.
+function scalar(v) {
+  return Array.isArray(v) ? v[v.length - 1] : v;
 }
 
 // Normalize a repeatable/comma flag into a flat list: undefined | "a,b" | ["a","b,c"] -> [...].
@@ -263,7 +270,7 @@ try {
           title: values.title,
           status: values.status,
           sprint: values.sprint,
-          epic: values.epic,
+          epic: scalar(values.epic),
           priority: values.priority,
           assignee: values.assignee,
           dueDate: values.due,
@@ -301,7 +308,11 @@ try {
       if (values.title != null) patch.title = values.title;
       if (values.status != null) patch.status = values.status;
       if (values.sprint != null) patch.sprint = values.sprint === "none" ? null : values.sprint;
-      if (values.epic != null) patch.epic = values.epic === "none" ? "" : values.epic;
+      // --epic is repeatable (array); a ticket has one epic, so take the last given.
+      if (values.epic != null) {
+        const e = scalar(values.epic);
+        patch.epic = e === "none" ? "" : e;
+      }
       if (values.priority != null) patch.priority = values.priority;
       if (values.assignee != null) patch.assignee = values.assignee;
       if (values.due != null) patch.dueDate = values.due === "none" ? null : values.due;
