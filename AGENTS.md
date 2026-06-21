@@ -59,13 +59,14 @@ node cli.js show   -p demo DEMO-1               # full ticket JSON (incl. behind
 node cli.js projects                            # list projects
 node cli.js newproject <slug> --name "…" --prefix ABC   # new project
 
-# get notified — register interest, then drain your inbox (no need to own a column)
-node cli.js watch    -p demo --actor me --epic Auth --column done --ticket DEMO-3
+# get notified — the SERVER is the always-on notifier; you just register + read your inbox.
+# Never run/restart a watcher. inbox has no timeout — read it whenever you run (each turn).
+node cli.js watch    -p demo --actor me --epic Auth --column done --ticket DEMO-3   # register once
+node cli.js inbox    -p demo --actor me              # drain new events since last read (--peek to not drain)
 node cli.js note     -p demo DEMO-1 "@pm need a decision" --actor me  # tag someone — hits @pm's inbox, no column move
-node cli.js inbox    -p demo --actor me              # drain new events (--peek to not drain)
-node cli.js wait     -p demo --actor me              # block until new events, then print (loop this)
 node cli.js watching -p demo --actor me              # show your subscription
 node cli.js unwatch  -p demo --actor me --all        # stop watching
+node cli.js watch    -p demo --actor me --epic Auth --notify http://host:9000/wake  # optional: webhook push instead of pulling
 
 node cli.js sprint new   -p <project> --id sprint-2 --name "Sprint 2" --end 2026-07-15 --goal "…"
 node cli.js sprint edit  -p <project> sprint-2 --name "…" --start … --end … --goal "…"

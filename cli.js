@@ -22,7 +22,7 @@
 //   node cli.js archive   -p <proj> [<id>] [--days N] [--dry-run]   sweep, or archive one
 //   node cli.js archived  -p <proj>                                 list archived tickets
 //   node cli.js unarchive -p <proj> <id>                            restore to the board
-//   node cli.js watch    -p <proj> --actor <id> [--ticket ID]... [--epic E]... [--column C]... [--mentions]
+//   node cli.js watch    -p <proj> --actor <id> [--ticket ID]... [--epic E]... [--column C]... [--mentions] [--notify <url>]
 //   node cli.js unwatch  -p <proj> --actor <id> [--ticket ID]... [--epic E]... | [--all]
 //   node cli.js watching -p <proj> --actor <id>           show this actor's subscription
 //   node cli.js inbox    -p <proj> --actor <id> [--peek]  drain new events for this actor
@@ -92,6 +92,7 @@ function parse(args, { multi = [] } = {}) {
     all: { type: "boolean" },
     peek: { type: "boolean" },
     timeout: { type: "string" },
+    notify: { type: "string" },
   };
   let parsed;
   try {
@@ -171,6 +172,7 @@ function fmtSub(sub) {
   if (sub.epics?.length) parts.push(`epics=[${sub.epics.join(",")}]`);
   if (sub.columns?.length) parts.push(`columns=[${sub.columns.join(",")}]`);
   if (sub.mentions) parts.push("@mentions");
+  if (sub.notify) parts.push(`→ ${sub.notify}`);
   return parts.join(" ") || "nothing";
 }
 
@@ -487,8 +489,10 @@ try {
         columns: asList(values.column),
         mentions: !!values.mentions,
       };
-      if (!filters.tickets.length && !filters.epics.length && !filters.columns.length && !filters.mentions) {
-        die("watch needs at least one of --ticket --epic --column --mentions");
+      if (values.notify != null) filters.notify = values.notify; // webhook push URL (or "none" to clear)
+      const hasFilter = filters.tickets.length || filters.epics.length || filters.columns.length || filters.mentions;
+      if (!hasFilter && values.notify == null) {
+        die("watch needs at least one of --ticket --epic --column --mentions (or --notify <url>)");
       }
       const sub = await store.setWatch(proj(values), actor, filters);
       console.log(`${actor} now watching ${fmtSub(sub)}`);
