@@ -143,6 +143,32 @@ alike — as typed events: `created`, `moved`, `noted`, `edited`, `attached`,
 Consumers (the watcher below) track a byte **offset** into the file as their cursor;
 reads only consume whole lines, so a concurrent append is never seen half-parsed.
 
+## Subscriptions & inbox (agents watching tickets/epics/columns)
+
+Instead of every agent running its own watcher, an agent can **register** what it cares
+about and then drain its own inbox. The store fans each event out to the inbox of every
+subscriber it matches (`data/projects/<slug>/inbox/<actor>.ndjson`), so an agent reads
+one file — no client-side filtering, no replay of the whole board. An actor is never
+notified of its **own** action.
+
+```bash
+# register interest (unions with whatever you already watch); needs --actor
+node cli.js watch    -p demo --actor coder-2 --epic Auth --column done --ticket DEMO-3
+node cli.js watch    -p demo --actor pm --mentions          # @pm in a note lands here
+
+node cli.js inbox    -p demo --actor coder-2                # drain new events (advances cursor)
+node cli.js inbox    -p demo --actor coder-2 --peek         # look without draining
+node cli.js watching -p demo --actor coder-2                # show my subscription
+node cli.js unwatch  -p demo --actor coder-2 --epic Auth    # drop one filter
+node cli.js unwatch  -p demo --actor coder-2 --all          # stop watching entirely
+```
+
+Subscriptions live in `data/projects/<slug>/watchers.json`; the inbox is cursor-tracked
+(durable and replay-safe — draining advances a cursor, nothing is deleted). All commands
+work locally or over `CLAMBAKE_URL`. Matching is by **ticket id**, **epic**, the
+**destination column** of a move (or a new ticket's column), or an **@mention** of the
+actor. This is the pull model; `watch.js` below is the blocking-until-change companion.
+
 ## Watcher (optional, for agent harnesses)
 
 `watch.js` lets an agent/host harness block until the board changes, then re-run. It

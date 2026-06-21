@@ -22,6 +22,10 @@
 //   node cli.js archive   -p <proj> [<id>] [--days N] [--dry-run]   sweep, or archive one
 //   node cli.js archived  -p <proj>                                 list archived tickets
 //   node cli.js unarchive -p <proj> <id>                            restore to the board
+//   node cli.js watch    -p <proj> --actor <id> [--ticket ID]... [--epic E]... [--column C]... [--mentions]
+//   node cli.js unwatch  -p <proj> --actor <id> [--ticket ID]... [--epic E]... | [--all]
+//   node cli.js watching -p <proj> --actor <id>           show this actor's subscription
+//   node cli.js inbox    -p <proj> --actor <id> [--peek]  drain new events for this actor
 //   node cli.js projects
 //   node cli.js newproject <slug> [--name "..."] [--prefix MET] [--stale 5]
 //   node cli.js sprint new -p <proj> --id s1 --name "Sprint 1" [--start ...] [--end ...] [--goal ...]
@@ -80,6 +84,12 @@ function parse(args, { multi = [] } = {}) {
     ac: { type: "string", multiple: true },
     label: { type: "string", short: "l", multiple: true },
     link: { type: "string", multiple: true },
+    // watch subscriptions + inbox
+    ticket: { type: "string", multiple: true },
+    column: { type: "string", multiple: true },
+    mentions: { type: "boolean" },
+    all: { type: "boolean" },
+    peek: { type: "boolean" },
   };
   let parsed;
   try {
@@ -143,6 +153,41 @@ function proj(values) {
   const p = values.p || values.project;
   if (!p) die("Missing -p <project>");
   return p;
+}
+
+// Normalize a repeatable/comma flag into a flat list: undefined | "a,b" | ["a","b,c"] -> [...].
+function asList(v) {
+  if (v == null) return [];
+  return (Array.isArray(v) ? v : [v]).flatMap((s) => String(s).split(",")).map((s) => s.trim()).filter(Boolean);
+}
+
+// One-line render of a subscription.
+function fmtSub(sub) {
+  if (!sub) return "nothing";
+  const parts = [];
+  if (sub.tickets?.length) parts.push(`tickets=[${sub.tickets.join(",")}]`);
+  if (sub.epics?.length) parts.push(`epics=[${sub.epics.join(",")}]`);
+  if (sub.columns?.length) parts.push(`columns=[${sub.columns.join(",")}]`);
+  if (sub.mentions) parts.push("@mentions");
+  return parts.join(" ") || "nothing";
+}
+
+// One-line render of an inbox/event entry.
+function fmtEvent(e) {
+  const t = e.ts ? e.ts.slice(11, 19) : "--:--:--";
+  const who = e.actor ? ` (by ${e.actor})` : "";
+  switch (e.type) {
+    case "moved":
+      return `${t}  ${e.ticket}: ${e.from} -> ${e.to}${who}`;
+    case "created":
+      return `${t}  ${e.ticket}: created [${e.status}] ${e.title || ""}`.trimEnd() + who;
+    case "noted":
+      return `${t}  ${e.ticket}: note${e.summary ? ` — ${e.summary}` : ""}${who}`;
+    case "edited":
+      return `${t}  ${e.ticket}: edited ${(e.fields || []).join(", ")}${who}`;
+    default:
+      return `${t}  ${e.ticket}: ${e.type}${who}`;
+  }
 }
 
 // Enum-value guards: reject a bad --priority / status with the valid set, instead of
@@ -427,6 +472,59 @@ try {
         staleDays: values.stale != null ? Number(values.stale) : undefined,
       });
       console.log(`created project ${p.slug}`);
+      break;
+    }
+
+    case "watch": {
+      // Register interest so matching events land in this actor's inbox.
+      const { values } = parse(argv.slice(1));
+      const actor = values.actor || die("watch needs --actor <id>");
+      const filters = {
+        tickets: asList(values.ticket),
+        epics: asList(values.epic),
+        columns: asList(values.column),
+        mentions: !!values.mentions,
+      };
+      if (!filters.tickets.length && !filters.epics.length && !filters.columns.length && !filters.mentions) {
+        die("watch needs at least one of --ticket --epic --column --mentions");
+      }
+      const sub = await store.setWatch(proj(values), actor, filters);
+      console.log(`${actor} now watching ${fmtSub(sub)}`);
+      break;
+    }
+
+    case "unwatch": {
+      const { values } = parse(argv.slice(1));
+      const actor = values.actor || die("unwatch needs --actor <id>");
+      const sub = await store.unwatch(proj(values), actor, {
+        tickets: asList(values.ticket),
+        epics: asList(values.epic),
+        columns: asList(values.column),
+        mentions: !!values.mentions,
+        all: !!values.all,
+      });
+      console.log(sub ? `${actor} now watching ${fmtSub(sub)}` : `${actor} is no longer watching anything`);
+      break;
+    }
+
+    case "watching": {
+      const { values } = parse(argv.slice(1));
+      const actor = values.actor || die("watching needs --actor <id>");
+      const sub = await store.getWatch(proj(values), actor);
+      console.log(sub && Object.keys(sub).length ? `${actor} watches ${fmtSub(sub)}` : `${actor} watches nothing`);
+      break;
+    }
+
+    case "inbox": {
+      // Drain this actor's inbox (advances its cursor unless --peek).
+      const { values } = parse(argv.slice(1));
+      const actor = values.actor || die("inbox needs --actor <id>");
+      const { events } = await store.readInbox(proj(values), actor, { peek: !!values.peek });
+      if (!events.length) {
+        console.log("(inbox empty)");
+        break;
+      }
+      for (const e of events) console.log(fmtEvent(e));
       break;
     }
 
