@@ -164,6 +164,32 @@ app.post(
   )
 );
 
+// ---- watch subscriptions + inbox ----
+// Register/extend an actor's interests (union with whatever it already watches).
+app.put(
+  "/api/projects/:p/watchers/:actor",
+  h((req) => store.setWatch(req.params.p, req.params.actor, req.body || {}))
+);
+// Inspect an actor's subscription.
+app.get(
+  "/api/projects/:p/watchers/:actor",
+  h((req) => store.getWatch(req.params.p, req.params.actor) || {})
+);
+// Remove some interests, or the whole subscription (body { all: true } or no filters).
+app.delete(
+  "/api/projects/:p/watchers/:actor",
+  h((req) => ({ subscription: store.unwatch(req.params.p, req.params.actor, req.body || {}) }))
+);
+// Drain an actor's inbox (advances its cursor unless ?peek=1).
+app.get(
+  "/api/projects/:p/inbox/:actor",
+  h((req) =>
+    store.readInbox(req.params.p, req.params.actor, {
+      peek: req.query.peek === "1" || req.query.peek === "true",
+    })
+  )
+);
+
 // ---- static UI ----
 app.use(express.static(path.join(__dirname, "public")));
 

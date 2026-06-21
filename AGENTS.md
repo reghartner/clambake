@@ -55,6 +55,13 @@ node cli.js show   -p demo DEMO-1               # full ticket JSON (incl. behind
 node cli.js projects                            # list projects
 node cli.js newproject <slug> --name "…" --prefix ABC   # new project
 
+# get notified — register interest, then drain your inbox (no need to own a column)
+node cli.js watch    -p demo --actor me --epic Auth --column done --ticket DEMO-3
+node cli.js watch    -p demo --actor me --mentions   # @me in a note reaches you
+node cli.js inbox    -p demo --actor me              # drain new events (--peek to not drain)
+node cli.js watching -p demo --actor me              # show your subscription
+node cli.js unwatch  -p demo --actor me --all        # stop watching
+
 node cli.js sprint new   -p <project> --id sprint-2 --name "Sprint 2" --end 2026-07-15 --goal "…"
 node cli.js sprint edit  -p <project> sprint-2 --name "…" --start … --end … --goal "…"
 node cli.js sprint close -p <project> sprint-1
