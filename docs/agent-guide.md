@@ -182,22 +182,31 @@ node cli.js inbox -p demo --actor coder-3 --peek   # look without draining
 ```
 
 The inbox is durable and replay-safe: draining only advances a cursor, nothing is deleted.
+It returns immediately — **no timeout, nothing to keep alive.** Read it whenever your agent
+runs (typically the first thing each turn) and you get everything since last time. You never
+start or restart a watcher; the server is the always-on notifier.
 
-### Block until something happens
+### Get pushed instead of checking (`--notify`)
 
-For a turn-based loop, don't poll — **`wait`** blocks until you have new events (or
-`--timeout` ms), prints them, and exits. Back-to-back calls are gap-free.
-
-`--timeout` can be any length (minutes, an hour). Over `CLAMBAKE_URL` the client holds short
-≤25s polls under the hood and loops to your total — so a long `--timeout` is safe and a
-clean timeout just prints `(no new events)` and exits 0 (it won't crash with `fetch
-failed`).
+If you'd rather be nudged than pull, register a webhook. The server fire-and-forgets a
+`POST {project, actor, event}` to your URL the instant a matching event lands:
 
 ```bash
-while :; do
-  node cli.js wait -p demo --actor coder-3 --timeout 60000 || true
-  # ...react to what landed, then loop...
-done
+node cli.js watch -p demo --actor coder-3 --epic results --notify http://my-host:9000/wake
+node cli.js watch -p demo --actor coder-3 --notify none     # turn it off
+```
+
+Push is **best-effort** — the inbox stays the source of truth, so a missed nudge is still
+there to pull. Pattern: webhook wakes you → you `inbox` to drain.
+
+### Optional: block with `wait`
+
+If you specifically want to block in a script until something arrives, `wait` does that
+(any `--timeout` length is safe). It's optional — for most turn-based agents `inbox` on your
+turn, or the webhook nudge, is simpler with nothing to babysit.
+
+```bash
+node cli.js wait -p demo --actor coder-3 --timeout 120000
 ```
 
 ### Tag someone with `@mentions`
@@ -214,33 +223,33 @@ node cli.js note -p demo DEMO-3 "@pm need a call on the schema change" -a coder-
 You're never pinged by your own `@self`, and an event that both mentions you and matches a
 subscription is delivered once.
 
-### Whole-board watching (harness use)
+### Whole-board watching (legacy / harness use)
 
-If a host harness wants to wake on *any* board change (not a per-actor inbox), `watch.js`
-tails the event log and exits on the first event:
-
-```bash
-node watch.js demo --ignore-actor coder-3
-```
-
-For per-agent notifications prefer `wait` above — it's gap-free and needs no supervisor.
+`watch.js` (and its `watch-loop.sh` supervisor) tail the whole event log and exit on the
+first change — a host-harness tool that predates the inbox. For per-agent notifications use
+`watch` + `inbox` (+ optional `--notify`) above; you don't need to run or supervise anything.
 
 ---
 
 ## 7. A recommended agent loop
 
+Register once, then **read your inbox each time you run** — no watcher, no timeout:
+
 ```bash
 ME=coder-3
 node cli.js watch -p demo --actor $ME --epic my-epic   # set up once (@mentions reach you regardless)
 
-while :; do
-  node cli.js wait -p demo --actor $ME --timeout 120000 || true    # block for work
-  # For each event: pick up the ticket, do the work, then report:
-  node cli.js move -p demo DEMO-7 active        -a $ME
-  node cli.js note -p demo DEMO-7 "PR #34 open" -a $ME
-  node cli.js move -p demo DEMO-7 testingNeeded -a $ME
-done
+# ...then at the top of every turn:
+node cli.js inbox -p demo --actor $ME                   # what changed since last turn
+# For each event: pick up the ticket, do the work, then report:
+node cli.js move -p demo DEMO-7 active        -a $ME
+node cli.js note -p demo DEMO-7 "PR #34 open" -a $ME
+node cli.js move -p demo DEMO-7 testingNeeded -a $ME
 ```
+
+If your harness leaves an agent idle and you want clambake to **wake** it event-driven, add
+`--notify <url>` to the `watch` and have your supervisor hit that URL → run the agent → it
+drains `inbox`. (A standalone script that must block in place can use `wait` instead.)
 
 Etiquette:
 - Open a ticket before starting non-trivial work; move it as its state changes.

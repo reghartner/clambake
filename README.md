@@ -143,32 +143,35 @@ alike — as typed events: `created`, `moved`, `noted`, `edited`, `attached`,
 Consumers (the watcher below) track a byte **offset** into the file as their cursor;
 reads only consume whole lines, so a concurrent append is never seen half-parsed.
 
-## Subscriptions & inbox (agents watching tickets/epics/columns)
+## Subscriptions & inbox (the notification system)
 
-Instead of every agent running its own watcher, an agent can **register** what it cares
-about and then drain its own inbox. The store fans each event out to the inbox of every
-subscriber it matches (`data/projects/<slug>/inbox/<actor>.ndjson`), so an agent reads
-one file — no client-side filtering, no replay of the whole board. An actor is never
-notified of its **own** action.
+**There is one always-on notifier: the server.** Every write funnels through it, and it
+fans each event into the inbox of every subscriber it matches. **Agents never start, run,
+or restart a watcher** — they do exactly two things:
+
+1. **`watch`** — register interest (once).
+2. **`inbox`** — read what fanned out to them.
 
 ```bash
-# register interest (unions with whatever you already watch); needs --actor
+# 1. register interest (unions with whatever you already watch); needs --actor
 node cli.js watch    -p demo --actor coder-2 --epic Auth --column done --ticket DEMO-3
 node cli.js watch    -p demo --actor pm --mentions          # @pm in a note lands here
 
-node cli.js inbox    -p demo --actor coder-2                # drain new events (advances cursor)
+# 2. read your inbox — returns immediately with everything since you last read
+node cli.js inbox    -p demo --actor coder-2                # drain (advances your cursor)
 node cli.js inbox    -p demo --actor coder-2 --peek         # look without draining
-node cli.js wait     -p demo --actor coder-2                # BLOCK until new events, then print + exit
+
 node cli.js watching -p demo --actor coder-2                # show my subscription
 node cli.js unwatch  -p demo --actor coder-2 --epic Auth    # drop one filter
 node cli.js unwatch  -p demo --actor coder-2 --all          # stop watching entirely
 ```
 
-Subscriptions live in `data/projects/<slug>/watchers.json`; the inbox is cursor-tracked
-(durable and replay-safe — draining advances a cursor, nothing is deleted). All commands
-work locally or over `CLAMBAKE_URL`. Matching is by **ticket id**, **epic**, the
-**destination column** of a move (or a new ticket's column), or an **@mention** of the
-actor. This is the pull model; `watch.js` below is the blocking-until-change companion.
+`inbox` has **no timeout and nothing to keep alive** — call it whenever your agent runs
+(e.g. at the top of each turn) and you get everything accumulated since last time. The
+inbox is cursor-tracked (durable, replay-safe — draining advances a cursor, nothing is
+deleted). Subscriptions live in `data/projects/<slug>/watchers.json`. Matching is by
+**ticket id**, **epic**, the **destination column** of a move (or a new ticket's column),
+or an **@mention**. All commands work locally or over `CLAMBAKE_URL`.
 
 **Tagging with @mentions.** Put `@actor` in a note (or a ticket body) and that actor gets
 it in their inbox — **even if they never registered** — so you can tag the PM for a
@@ -182,17 +185,25 @@ node cli.js inbox -p demo --actor pm        # → DEMO-3: note — @pm need a ca
 An author is never pinged by their own `@self`, and a mention that also matches a
 subscription is delivered just once.
 
-**Blocking instead of polling.** `inbox` returns immediately; `wait` blocks until new
-events arrive (or `--timeout` ms) and then prints them — the natural primitive for a
-turn-based agent: loop `wait`, react, repeat. It's gap-free because each call advances the
-same durable cursor, so nothing is missed between calls. For the inbox model this
-**supersedes the `watch-loop.sh` supervisor** — there's no one-shot watcher to re-arm.
+### Push: get nudged instead of checking (`--notify`)
 
-`--timeout` can be **any length** — minutes, an hour. Over `CLAMBAKE_URL` the client doesn't
-hold one giant connection (that would trip the runtime's ~300s `fetch` cap); it holds short
-≤25s server-side polls and loops until your total elapses, treating a dropped/idle
-connection as "nothing yet, re-poll" rather than an error. So `wait --timeout 3600000` is
-safe; on a clean timeout it just prints `(no new events)` and exits 0.
+If you don't want to pull at all, register a **webhook**: the server fire-and-forgets a
+`POST` to your URL the moment a matching event lands. Point it at your own listener, the
+PM's harness, a Slack bridge — anything.
+
+```bash
+node cli.js watch -p demo --actor coder-2 --epic Auth --notify http://my-host:9000/wake
+node cli.js watch -p demo --actor coder-2 --notify none      # turn the webhook off
+```
+
+The POST body is `{ project, actor, event }`. Delivery is **best-effort** — the **inbox
+remains the source of truth**, so a missed push (listener down, network blip) is still
+sitting in the inbox to pull. Pattern: webhook **nudges** you, then you `inbox` to drain.
+
+> Blocking option (`wait`): there's also `node cli.js wait --actor <id>` that blocks until
+> events arrive. It's optional — for most turn-based agents `inbox` on your turn (or the
+> webhook nudge) is simpler and has nothing to babysit. `watch.js` / `watch-loop.sh` are
+> legacy whole-board tools; the inbox system above replaces them for per-agent use.
 
 ## Watcher (optional, for agent harnesses)
 
