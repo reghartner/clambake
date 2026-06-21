@@ -59,6 +59,7 @@ node cli.js newproject <slug> --name "…" --prefix ABC   # new project
 node cli.js watch    -p demo --actor me --epic Auth --column done --ticket DEMO-3
 node cli.js note     -p demo DEMO-1 "@pm need a decision" --actor me  # tag someone — hits @pm's inbox, no column move
 node cli.js inbox    -p demo --actor me              # drain new events (--peek to not drain)
+node cli.js wait     -p demo --actor me              # block until new events, then print (loop this)
 node cli.js watching -p demo --actor me              # show your subscription
 node cli.js unwatch  -p demo --actor me --all        # stop watching
 
